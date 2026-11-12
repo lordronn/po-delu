@@ -1,30 +1,21 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type FormEvent,
-} from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   ArrowRight,
   Check,
   CheckCheck,
-  CornerDownLeft,
   ListTodo,
   LockKeyhole,
-  Plus,
   RotateCcw,
   ShieldCheck,
-  Trash2,
   TriangleAlert,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Card } from '@/components/ui/card'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
-import { MAX_TASK_LENGTH, validateText, type Task } from '@/domain/tasks'
+import type { Task } from '@/domain/tasks'
+import { TaskComposer } from '@/components/task-composer'
+import { SortableTaskList } from '@/components/sortable-task-list'
+import { TaskEditor } from '@/components/task-editor'
 import { STORAGE_KEY, type StorageBackend } from '@/data/storage'
 import type { TaskStore } from '@/app/task-store'
 
@@ -34,6 +25,12 @@ interface AppProps {
 }
 
 const storageMessages = {
+  outdated: {
+    title: 'В другой вкладке открыта старая версия',
+    description:
+      'Она записала список без описаний. Ваш текущий список оставлен здесь, чтобы не потерять детали. Обновите остальные вкладки, затем сохраните этот список. При обновлении текущей страницы несохранённые детали потеряются.',
+    button: 'Сохранить текущий список',
+  },
   corrupt: {
     title: 'Сохранённые данные не удалось прочитать',
     description:
@@ -54,46 +51,11 @@ const storageMessages = {
   },
 }
 
-function TaskRow({
-  task,
-  onToggle,
-  onDelete,
-}: {
-  task: Task
-  onToggle: () => void
-  onDelete: () => void
-}) {
-  return (
-    <li className="task-row" data-done={task.done} data-task-id={task.id}>
-      <Checkbox
-        id={`task-${task.id}`}
-        checked={task.done}
-        onCheckedChange={onToggle}
-        className="task-checkbox"
-        aria-label={`${task.done ? 'Вернуть в работу' : 'Выполнить'}: ${task.text}`}
-      />
-      <label className="task-label" htmlFor={`task-${task.id}`}>
-        {task.text}
-      </label>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="delete-button"
-        aria-label={`Удалить: ${task.text}`}
-        onClick={onDelete}
-      >
-        <Trash2 aria-hidden="true" size={17} />
-      </Button>
-    </li>
-  )
-}
-
 export default function App({ store, backend }: AppProps) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const { tasks, deleted, persistence } = snapshot
-  const [text, setText] = useState('')
-  const [inputError, setInputError] = useState<string | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [editing, setEditing] = useState<Task | null>(null)
+  const [dragNotice, setDragNotice] = useState<string | null>(null)
   const pendingFocus = useRef<string | null>(null)
   const done = tasks.filter((task) => task.done).length
   const remaining = tasks.length - done
@@ -122,22 +84,9 @@ export default function App({ store, backend }: AppProps) {
     const target = pendingFocus.current
     if (!target) return
     pendingFocus.current = null
-    const element = document.getElementById(target) ?? inputRef.current
+    const element = document.getElementById(target) ?? document.getElementById('new-task')
     element?.focus()
   }, [snapshot])
-
-  function addTask(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const error = validateText(text)
-    setInputError(error)
-    if (error) {
-      inputRef.current?.focus()
-      return
-    }
-    store.dispatch({ type: 'add', id: crypto.randomUUID(), text })
-    setText('')
-    inputRef.current?.focus()
-  }
 
   function removeTask(task: Task, index: number) {
     const neighbor = tasks[index + 1] ?? tasks[index - 1]
@@ -150,6 +99,45 @@ export default function App({ store, backend }: AppProps) {
     store.dispatch({ type: 'undo' })
   }
 
+  function moveTask(
+    id: string,
+    overId: string,
+    focus: 'drag' | 'buttons',
+    expected?: readonly Task[],
+  ) {
+    const current = store.getSnapshot().tasks
+    if (expected && current !== expected) {
+      setDragNotice('Список изменился во время переноса. Порядок не изменён — повторите перенос.')
+      return
+    }
+    if (
+      id === overId ||
+      !current.some((task) => task.id === id) ||
+      !current.some((task) => task.id === overId)
+    )
+      return
+    setDragNotice(null)
+    pendingFocus.current = `${focus === 'drag' ? 'drag' : 'details'}-${id}`
+    store.dispatch({ type: 'move', id, overId })
+  }
+
+  function saveEdit(base: Task, title: string, description: string, asNew: boolean): boolean {
+    const current = store.getSnapshot().tasks.find((task) => task.id === base.id)
+    if (
+      !asNew &&
+      (!current || current.title !== base.title || current.description !== base.description)
+    )
+      return false
+    store.dispatch({
+      type: asNew ? 'add' : 'update',
+      id: asNew ? crypto.randomUUID() : base.id,
+      title,
+      description,
+    })
+    setEditing(null)
+    return true
+  }
+
   function recoverStorage() {
     if (
       persistence === 'corrupt' &&
@@ -159,7 +147,7 @@ export default function App({ store, backend }: AppProps) {
     )
       return
     if (
-      persistence === 'conflict' &&
+      (persistence === 'conflict' || persistence === 'outdated') &&
       !window.confirm(
         'Заменить список другой вкладки текущим? Сохранённый список будет перезаписан.',
       )
@@ -175,14 +163,14 @@ export default function App({ store, backend }: AppProps) {
         Перейти к списку задач
       </a>
       <header className="site-header">
-        <a className="brand" href="#" aria-label="По делу — на главную">
+        <div className="brand">
           <span className="brand-mark">
             <Check aria-hidden="true" size={22} strokeWidth={2.6} />
           </span>
           <span>
             по делу<span className="brand-dot">.</span>
           </span>
-        </a>
+        </div>
         <span className="header-note">
           <LockKeyhole size={13} aria-hidden="true" /> Личное пространство
         </span>
@@ -213,43 +201,11 @@ export default function App({ store, backend }: AppProps) {
         )}
 
         <Card className="task-card">
-          <form className="add-form" onSubmit={addTask} noValidate>
-            <label className="form-label" htmlFor="new-task">
-              Что нужно сделать?
-            </label>
-            <div className="input-group">
-              <Input
-                ref={inputRef}
-                id="new-task"
-                name="task"
-                value={text}
-                onChange={(event) => {
-                  setText(event.target.value)
-                  if (inputError) setInputError(null)
-                }}
-                placeholder="Например, разобрать почту"
-                maxLength={MAX_TASK_LENGTH}
-                autoComplete="off"
-                aria-invalid={!!inputError}
-                aria-describedby={inputError ? 'input-error' : 'input-hint'}
-                className="task-input"
-              />
-              <Button type="submit" className="add-button">
-                <Plus aria-hidden="true" size={18} />
-                <span>Добавить</span>
-              </Button>
-            </div>
-            {inputError ? (
-              <p id="input-error" className="input-error" role="alert">
-                {inputError}
-              </p>
-            ) : (
-              <p id="input-hint" className="input-hint">
-                <CornerDownLeft size={12} aria-hidden="true" /> Enter, чтобы добавить · до{' '}
-                {MAX_TASK_LENGTH} символов
-              </p>
-            )}
-          </form>
+          <TaskComposer
+            onAdd={(title, description) =>
+              store.dispatch({ type: 'add', id: crypto.randomUUID(), title, description })
+            }
+          />
 
           <section className="list-section" aria-labelledby="list-title">
             <div className="list-heading">
@@ -263,6 +219,11 @@ export default function App({ store, backend }: AppProps) {
                 </span>
               )}
             </div>
+            {tasks.length > 1 && (
+              <p className="sort-hint">
+                Меняйте порядок за ручку ⋮⋮ или кнопками в раскрытой задаче.
+              </p>
+            )}
             {tasks.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-illustration" aria-hidden="true">
@@ -289,16 +250,13 @@ export default function App({ store, backend }: AppProps) {
                 </span>
               </div>
             ) : (
-              <ul className="task-list" aria-label="Задачи">
-                {tasks.map((task, index) => (
-                  <TaskRow
-                    key={task.id}
-                    task={task}
-                    onToggle={() => store.dispatch({ type: 'toggle', id: task.id })}
-                    onDelete={() => removeTask(task, index)}
-                  />
-                ))}
-              </ul>
+              <SortableTaskList
+                tasks={tasks}
+                onToggle={(id) => store.dispatch({ type: 'toggle', id })}
+                onDelete={removeTask}
+                onEdit={setEditing}
+                onMove={moveTask}
+              />
             )}
             {tasks.length > 0 && done === tasks.length && (
               <div className="all-done">
@@ -322,12 +280,27 @@ export default function App({ store, backend }: AppProps) {
           <div className="undo-panel">
             <div>
               <span className="undo-title">Задача удалена</span>
-              <span className="undo-text">{deleted.task.text}</span>
+              <span className="undo-text">{deleted.task.title}</span>
             </div>
             <Button variant="outline" size="sm" onClick={undoDelete}>
               <RotateCcw size={14} aria-hidden="true" /> Отменить
             </Button>
           </div>
+        )}
+
+        {dragNotice && (
+          <p className="drag-notice" role="status">
+            {dragNotice}
+          </p>
+        )}
+        {editing && (
+          <TaskEditor
+            key={editing.id}
+            initial={editing}
+            current={tasks.find((task) => task.id === editing.id)}
+            onSave={saveEdit}
+            onClose={() => setEditing(null)}
+          />
         )}
 
         <p className="below-card">Без гонки за продуктивностью. Просто по делу.</p>

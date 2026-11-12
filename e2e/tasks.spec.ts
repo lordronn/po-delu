@@ -3,9 +3,15 @@ import { mkdir } from 'node:fs/promises'
 import AxeBuilder from '@axe-core/playwright'
 import { STORAGE_KEY } from '../src/data/storage'
 
-const input = (page: Page) => page.getByRole('textbox', { name: 'Что нужно сделать?' })
+const input = (page: Page) => page.getByRole('textbox', { name: 'Заголовок задачи' })
 
-async function addTask(page: Page, text: string) {
+async function addTask(page: Page, text: string, description?: string) {
+  if (description !== undefined) {
+    await page.getByRole('button', { name: 'Добавить описание', exact: true }).click()
+    await page
+      .getByRole('textbox', { name: 'Описание необязательно', exact: true })
+      .fill(description)
+  }
   await input(page).fill(text)
   await input(page).press('Enter')
 }
@@ -22,7 +28,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('adds, trims, toggles, untoggles and deletes persistently', async ({ page }) => {
-  await addTask(page, '  Разобрать почту  ')
+  await addTask(page, '  Разобрать почту  ', 'Ответить на важные письма.\nОстальное — в архив.')
   await addTask(page, 'Отправить проект')
   await expect(page.getByRole('checkbox')).toHaveCount(2)
   await expect(page.locator('.task-label')).toHaveText(['Отправить проект', 'Разобрать почту'])
@@ -31,10 +37,12 @@ test('adds, trims, toggles, untoggles and deletes persistently', async ({ page }
   await page.reload()
   await expect(mail).toBeChecked()
   if (process.env.CAPTURE_SCREENSHOTS) {
+    await page.getByRole('button', { name: 'Подробности: Разобрать почту', exact: true }).click()
     await mkdir('docs/screenshots', { recursive: true })
     await page.screenshot({
       path: `docs/screenshots/${test.info().project.name}.png`,
       fullPage: true,
+      animations: 'disabled',
     })
   }
   await mail.uncheck()
@@ -48,7 +56,7 @@ test('adds, trims, toggles, untoggles and deletes persistently', async ({ page }
 
 test('rejects whitespace, bounds input and permits duplicate titles', async ({ page }) => {
   await addTask(page, '   ')
-  await expect(page.getByRole('alert')).toHaveText('Напишите, что нужно сделать.')
+  await expect(page.getByRole('alert')).toHaveText('Укажите заголовок задачи.')
   await expect(input(page)).toBeFocused()
   await expect(page.getByRole('checkbox')).toHaveCount(0)
   await audit(page)
@@ -69,7 +77,6 @@ test('keyboard flow preserves focus on toggle, delete and undo', async ({ page }
   await page.keyboard.press('Tab')
   await expect(page.getByRole('link', { name: 'Перейти к списку задач' })).toBeFocused()
   await page.keyboard.press('Tab')
-  await page.keyboard.press('Tab')
   await expect(input(page)).toBeFocused()
   await page.keyboard.insertText('Проверить клавиатуру')
   await page.keyboard.press('Enter')
@@ -77,16 +84,22 @@ test('keyboard flow preserves focus on toggle, delete and undo', async ({ page }
   await page.keyboard.press('Tab')
   await expect(page.getByRole('button', { name: 'Добавить', exact: true })).toBeFocused()
   await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'Добавить описание', exact: true })).toBeFocused()
+  await page.keyboard.press('Tab')
   const checkbox = page.getByRole('checkbox')
   await expect(checkbox).toBeFocused()
   await page.keyboard.press('Space')
   await expect(checkbox).toBeChecked()
   await expect(checkbox).toBeFocused()
   await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: /^Подробности:/ })).toBeFocused()
+  await page.keyboard.press('Tab')
   await expect(page.getByRole('button', { name: /^Удалить:/ })).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(input(page)).toBeFocused()
   await page.keyboard.press('Tab')
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'Добавить описание', exact: true })).toBeFocused()
   await page.keyboard.press('Tab')
   await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toBeFocused()
   await page.keyboard.press('Enter')
@@ -330,4 +343,374 @@ test('valid non-UUID ids do not collide with focus targets', async ({ page }) =>
   await page.reload()
   await page.getByRole('button', { name: 'Удалить: Удалить', exact: true }).click()
   await expect(page.getByRole('checkbox', { name: /Сосед/ })).toBeFocused()
+})
+
+test('creates title and multiline description, expands and edits without changing completion', async ({
+  page,
+}) => {
+  await addTask(page, 'План релиза', 'Подготовить сборку\nПроверить CI')
+  await expect(page.getByText('Подготовить сборку\nПроверить CI', { exact: true })).toHaveCount(0)
+  const details = page.getByRole('button', { name: 'Подробности: План релиза', exact: true })
+  await expect(details).toHaveAttribute('aria-expanded', 'false')
+  await details.click()
+  await expect(details).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('.task-description')).toHaveText('Подготовить сборку\nПроверить CI')
+  await page.getByRole('checkbox').check()
+  await page.getByRole('button', { name: 'Изменить: План релиза', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Изменить задачу' })
+  await expect(dialog.getByRole('textbox', { name: 'Заголовок задачи', exact: true })).toBeFocused()
+  await dialog.getByRole('textbox', { name: 'Заголовок задачи', exact: true }).fill('Релиз готов')
+  await dialog
+    .getByRole('textbox', { name: 'Описание', exact: true })
+    .fill('Сборка проверена\nМожно отправлять')
+  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: 'Подробности: Релиз готов', exact: true }),
+  ).toBeFocused()
+  await page.reload()
+  await expect(page.getByRole('checkbox')).toBeChecked()
+  await page.getByRole('button', { name: 'Подробности: Релиз готов', exact: true }).click()
+  await expect(page.locator('.task-description')).toHaveText('Сборка проверена\nМожно отправлять')
+  await audit(page)
+})
+
+test('editing validates title, supports multiline input and cancels with Escape', async ({
+  page,
+}) => {
+  await addTask(page, 'Оригинал', 'Детали')
+  await page.getByRole('button', { name: 'Подробности: Оригинал', exact: true }).click()
+  await page.getByRole('button', { name: 'Изменить: Оригинал', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox', { name: 'Заголовок задачи', exact: true }).fill('  ')
+  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toHaveText('Укажите заголовок задачи.')
+  await expect(dialog.getByRole('textbox', { name: 'Заголовок задачи', exact: true })).toBeFocused()
+  await dialog.getByRole('textbox', { name: 'Заголовок задачи', exact: true }).fill('Черновик')
+  const description = dialog.getByRole('textbox', { name: 'Описание', exact: true })
+  await description.fill('Первая строка')
+  await description.press('Enter')
+  await description.pressSequentially('Вторая строка')
+  await page.mouse.click(4, 4)
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(page.locator('.task-label')).toHaveText(['Оригинал'])
+  await expect(page.locator('.task-description')).toHaveText('Детали')
+})
+
+test('move buttons and undo preserve details, state and order', async ({ page }) => {
+  await addTask(page, 'Первое', 'Детали первого')
+  await addTask(page, 'Второе', 'Детали второго')
+  await addTask(page, 'Третье', 'Детали третьего')
+  await page.getByRole('button', { name: 'Подробности: Третье', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Выше: Третье', exact: true })).toBeDisabled()
+  const moveDown = page.getByRole('button', { name: 'Ниже: Третье', exact: true })
+  if (test.info().project.name === 'desktop') await moveDown.click()
+  else await moveDown.tap()
+  await expect(page.locator('.task-label')).toHaveText(['Второе', 'Третье', 'Первое'])
+  await expect(page.getByRole('button', { name: 'Подробности: Третье', exact: true })).toBeFocused()
+  await page.getByRole('checkbox', { name: /Третье/ }).check()
+  await page.getByRole('button', { name: 'Удалить: Третье', exact: true }).click()
+  await page.getByRole('button', { name: 'Подробности: Первое', exact: true }).click()
+  await page.getByRole('button', { name: 'Выше: Первое', exact: true }).click()
+  await expect(page.locator('.task-label')).toHaveText(['Первое', 'Второе'])
+  await page.getByRole('button', { name: 'Отменить', exact: true }).click()
+  await expect(page.locator('.task-label')).toHaveText(['Третье', 'Первое', 'Второе'])
+  await page.reload()
+  await expect(page.locator('.task-label')).toHaveText(['Третье', 'Первое', 'Второе'])
+  await expect(page.getByRole('checkbox', { name: /Третье/ })).toBeChecked()
+  await page.getByRole('button', { name: 'Подробности: Третье', exact: true }).click()
+  await expect(page.locator('.task-item').first().locator('.task-description')).toHaveText(
+    'Детали третьего',
+  )
+})
+
+test('pointer drag reorders by the handle, persists and does not toggle or expand', async ({
+  page,
+}) => {
+  await addTask(page, 'Первое')
+  await addTask(page, 'Второе')
+  await addTask(page, 'Третье')
+  await page
+    .locator('.task-list')
+    .evaluate((element) => element.scrollIntoView({ block: 'center' }))
+  const from = await page
+    .getByRole('button', { name: 'Переместить: Третье', exact: true })
+    .boundingBox()
+  const to = await page.locator('.task-item').last().boundingBox()
+  if (!from || !to) throw new Error('Drag targets must be rendered')
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2 + 12, { steps: 3 })
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
+  ).toHaveCount(1)
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 })
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-over="true"]').locator('.task-label'),
+  ).toHaveText('Первое')
+  await page.mouse.up()
+  await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+    'Второе',
+    'Первое',
+    'Третье',
+  ])
+  await expect(
+    page.getByRole('button', { name: 'Подробности: Третье', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('checkbox', { name: /Третье/ })).not.toBeChecked()
+  await page.reload()
+  await expect(page.locator('.task-label')).toHaveText(['Второе', 'Первое', 'Третье'])
+})
+
+test('keyboard drag supports reorder and Escape cancellation', async ({ page }) => {
+  await addTask(page, 'Первое')
+  await addTask(page, 'Второе')
+  await addTask(page, 'Третье')
+  const handle = page.getByRole('button', { name: 'Переместить: Третье', exact: true })
+  await handle.focus()
+  await page.keyboard.press('Space')
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
+  ).toHaveCount(1)
+  await page.keyboard.press('ArrowDown')
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-over="true"]').locator('.task-label'),
+  ).toHaveText('Второе')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.task-label')).toHaveText(['Второе', 'Третье', 'Первое'])
+  const raw = await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)
+  await handle.focus()
+  await page.keyboard.press('Space')
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
+  ).toHaveCount(1)
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.task-label')).toHaveText(['Второе', 'Третье', 'Первое'])
+  expect(await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)).toBe(raw)
+})
+
+test('external updates during a drag cancel its commit instead of applying stale positions', async ({
+  page,
+  context,
+}) => {
+  await addTask(page, 'Первое')
+  await addTask(page, 'Второе')
+  const other = await context.newPage()
+  await other.goto('/')
+  const handle = page.getByRole('button', { name: 'Переместить: Второе', exact: true })
+  await handle.focus()
+  await page.keyboard.press('Space')
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
+  ).toHaveCount(1)
+  await page.keyboard.press('ArrowDown')
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-over="true"]').locator('.task-label'),
+  ).toHaveText('Первое')
+  await addTask(other, 'Внешняя задача')
+  await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toContainText([
+    'Внешняя задача',
+    'Второе',
+    'Первое',
+  ])
+  await page.keyboard.press('Enter')
+  await expect(
+    page.getByText('Список изменился во время переноса. Порядок не изменён — повторите перенос.'),
+  ).toBeVisible()
+  await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+    'Внешняя задача',
+    'Второе',
+    'Первое',
+  ])
+  await other.close()
+})
+
+test('draft survives external edits and can be saved separately without overwriting the other tab', async ({
+  page,
+  context,
+}) => {
+  await addTask(page, 'Общая задача', 'Исходное описание')
+  const other = await context.newPage()
+  await other.goto('/')
+  await page.getByRole('button', { name: 'Подробности: Общая задача', exact: true }).click()
+  await page.getByRole('button', { name: 'Изменить: Общая задача', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox', { name: 'Заголовок задачи', exact: true }).fill('Мой черновик')
+  await dialog.getByRole('textbox', { name: 'Описание', exact: true }).fill('Мои детали')
+  await other.evaluate((key) => {
+    const data = JSON.parse(localStorage.getItem(key)!)
+    data.tasks[0].description = 'Внешние детали'
+    localStorage.setItem(key, JSON.stringify(data))
+  }, STORAGE_KEY)
+  await expect(dialog.getByRole('alert')).toContainText('Задача изменилась в другой вкладке')
+  await expect(dialog.getByRole('textbox', { name: 'Описание', exact: true })).toHaveValue(
+    'Мои детали',
+  )
+  await expect(dialog.getByRole('button', { name: 'Сохранить', exact: true })).toHaveCount(0)
+  await audit(page)
+  await dialog.getByRole('button', { name: 'Загрузить актуальную', exact: true }).click()
+  await expect(dialog.getByRole('textbox', { name: 'Описание', exact: true })).toHaveValue(
+    'Внешние детали',
+  )
+  await expect(dialog.getByRole('button', { name: 'Сохранить', exact: true })).toBeVisible()
+  await dialog.getByRole('textbox', { name: 'Заголовок задачи', exact: true }).fill('Мой черновик')
+  await dialog.getByRole('textbox', { name: 'Описание', exact: true }).fill('Мои детали')
+  await other.evaluate((key) => {
+    const data = JSON.parse(localStorage.getItem(key)!)
+    data.tasks[0].description = 'Ещё внешние детали'
+    localStorage.setItem(key, JSON.stringify(data))
+  }, STORAGE_KEY)
+  await expect(dialog.getByRole('alert')).toContainText('Задача изменилась в другой вкладке')
+  await dialog.getByRole('button', { name: 'Добавить как новую', exact: true }).click()
+  await expect(page.locator('.task-label')).toHaveText(['Мой черновик', 'Общая задача'])
+  await expect(other.locator('.task-label')).toHaveText(['Мой черновик', 'Общая задача'])
+  await expect(page.getByText('Ещё внешние детали', { exact: true })).toBeVisible()
+  await other.close()
+})
+
+test('draft survives external deletion and can become a new task', async ({ page, context }) => {
+  await addTask(page, 'Удаляемая задача', 'Детали')
+  const other = await context.newPage()
+  await other.goto('/')
+  await page.getByRole('button', { name: 'Подробности: Удаляемая задача', exact: true }).click()
+  await page.getByRole('button', { name: 'Изменить: Удаляемая задача', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox', { name: 'Описание', exact: true }).fill('Несохранённые детали')
+  await other.getByRole('button', { name: 'Удалить: Удаляемая задача', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('Задача удалена в другой вкладке')
+  await expect(dialog.getByRole('textbox', { name: 'Описание', exact: true })).toHaveValue(
+    'Несохранённые детали',
+  )
+  await dialog.getByRole('button', { name: 'Добавить как новую', exact: true }).click()
+  await expect(page.getByRole('checkbox')).toHaveCount(1)
+  await page.getByRole('button', { name: 'Подробности: Удаляемая задача', exact: true }).click()
+  await expect(page.getByText('Несохранённые детали', { exact: true })).toBeVisible()
+  await other.close()
+})
+
+test('migrates existing tasks without a startup write and protects details from an old tab', async ({
+  page,
+  context,
+}) => {
+  const legacy = JSON.stringify({
+    version: 1,
+    tasks: [{ id: 'legacy', text: 'Старая задача', done: true }],
+  })
+  await page.evaluate(({ key, raw }) => localStorage.setItem(key, raw), {
+    key: STORAGE_KEY,
+    raw: legacy,
+  })
+  await page.reload()
+  await expect(page.getByRole('checkbox')).toBeChecked()
+  expect(await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)).toBe(legacy)
+  await addTask(page, 'Новая задача', 'Новые детали')
+  expect(
+    JSON.parse((await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY))!).version,
+  ).toBe(2)
+  const other = await context.newPage()
+  await other.goto('/')
+  await other.evaluate(({ key, raw }) => localStorage.setItem(key, raw), {
+    key: STORAGE_KEY,
+    raw: legacy,
+  })
+  await expect(page.getByRole('alert')).toContainText('В другой вкладке открыта старая версия')
+  await expect(page.locator('.task-label')).toHaveText(['Новая задача', 'Старая задача'])
+  await audit(page)
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Сохранить текущий список' }).click()
+  await page.reload()
+  await page.getByRole('button', { name: 'Подробности: Новая задача', exact: true }).click()
+  await expect(page.getByText('Новые детали', { exact: true })).toBeVisible()
+  await other.close()
+})
+
+test('description length, long text and HTML-like content remain safe and usable', async ({
+  page,
+}) => {
+  await page.getByRole('button', { name: 'Добавить описание', exact: true }).click()
+  const description = page.getByRole('textbox', { name: 'Описание необязательно', exact: true })
+  await description.fill('Д'.repeat(2100))
+  await expect(description).toHaveValue('Д'.repeat(2000))
+  await input(page).fill('Длинное описание')
+  await input(page).press('Enter')
+  await page.getByRole('button', { name: 'Подробности: Длинное описание', exact: true }).click()
+  await expect(page.locator('.task-description')).toHaveText('Д'.repeat(2000))
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.getByRole('button', { name: 'Изменить: Длинное описание', exact: true }).click()
+  await audit(page)
+  await page.keyboard.press('Escape')
+  const payload = '<img src=x onerror="window.__xss=true">\n<script>alert(1)</script>'
+  await addTask(page, 'Безопасный текст', payload)
+  await page.getByRole('button', { name: 'Подробности: Безопасный текст', exact: true }).click()
+  await expect(page.locator('.task-item').first().locator('.task-description')).toHaveText(payload)
+  await expect(page.locator('.task-details img, .task-details script')).toHaveCount(0)
+  expect(await page.evaluate(() => '__xss' in window)).toBe(false)
+})
+
+test('storage recovery with identical tasks does not invalidate an active drag', async ({
+  page,
+  context,
+}) => {
+  await page.evaluate(
+    (key) =>
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          version: 2,
+          tasks: [
+            { id: 'b', title: 'Второе', description: '', done: false },
+            { id: 'a', title: 'Первое', description: '', done: false },
+          ],
+        }),
+      ),
+    STORAGE_KEY,
+  )
+  await page.addInitScript((key) => {
+    const original = Storage.prototype.setItem
+    let fail = true
+    window.addEventListener('allow-writes', () => {
+      fail = false
+    })
+    Storage.prototype.setItem = function (name, value) {
+      if (name === key && fail) throw new DOMException('Quota exceeded', 'QuotaExceededError')
+      original.call(this, name, value)
+    }
+  }, STORAGE_KEY)
+  await page.reload()
+  await page.getByRole('checkbox', { name: /Второе/ }).check()
+  await expect(page.getByRole('alert')).toContainText('Задачи пока не сохраняются')
+  const other = await context.newPage()
+  await other.goto('/')
+  await page
+    .locator('.task-list')
+    .evaluate((element) => element.scrollIntoView({ block: 'center' }))
+  await page.getByRole('button', { name: 'Переместить: Второе', exact: true }).focus()
+  await page.keyboard.press('Space')
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
+  ).toHaveCount(1)
+  await page.keyboard.press('ArrowDown')
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-over="true"]').locator('.task-label'),
+  ).toHaveText('Первое')
+  await other.evaluate((key) => {
+    const data = JSON.parse(localStorage.getItem(key)!)
+    data.tasks[0].done = true
+    localStorage.setItem(key, JSON.stringify(data))
+  }, STORAGE_KEY)
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await page.evaluate(() => window.dispatchEvent(new Event('allow-writes')))
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+    'Первое',
+    'Второе',
+  ])
+  await expect(page.locator('.drag-notice')).toHaveCount(0)
+  await page.reload()
+  await expect(page.locator('.task-label')).toHaveText(['Первое', 'Второе'])
+  await other.close()
 })

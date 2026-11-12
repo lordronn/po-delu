@@ -1,5 +1,11 @@
 @import 'tailwindcss';
 
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+}
+
 @theme inline {
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --color-background: var(--background);
@@ -590,5 +596,214 @@ input:focus-visible {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Task details and ordering share the same calm, compact visual language. */
+.description-toggle {
+  margin: 4px 0 -4px -8px;
+  color: #535e84;
+  min-height: 44px;
+  font-size: 12px;
+}
+.description-field {
+  padding-top: 16px;
+}
+.description-field textarea,
+.task-editor textarea {
+  resize: vertical;
+  min-height: 100px;
+  max-height: 300px;
+  background: #fff;
+}
+.optional-label {
+  margin-left: 5px;
+  font-weight: 400;
+  color: #696d7a;
+  font-size: 11px;
+}
+.sort-hint {
+  padding: 0 28px 12px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: #686b77;
+}
+.task-item {
+  border-radius: 9px;
+  position: relative;
+  background: #fff;
+}
+.task-item + .task-item {
+  border-top: 1px solid #eceef3;
+}
+.task-item[data-dragging='true'] {
+  background: #f1f3ff;
+  outline: 2px solid #8c9be3;
+  z-index: 2;
+}
+.task-item[data-over='true']:not([data-dragging='true']) {
+  outline: 2px solid #3e54ce;
+  outline-offset: -2px;
+  background: #f4f6ff;
+}
+.task-row {
+  gap: 8px;
+  padding-right: 3px;
+}
+.task-trigger {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  border-radius: 6px;
+  min-height: 44px;
+  padding: 5px 3px;
+}
+.task-trigger:hover {
+  color: var(--primary);
+}
+.task-label {
+  padding: 3px 0;
+}
+.task-chevron {
+  flex-shrink: 0;
+  color: #747b90;
+  transition: transform 0.15s ease;
+}
+.task-trigger[aria-expanded='true'] .task-chevron {
+  transform: rotate(180deg);
+}
+.task-item[data-done='true'] .task-label {
+  color: #696d7a;
+  text-decoration: line-through;
+  text-decoration-color: #a9aebd;
+}
+.drag-handle {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  color: #70798d;
+  cursor: grab;
+  touch-action: none;
+}
+.drag-handle:active {
+  cursor: grabbing;
+}
+.drag-handle:disabled {
+  opacity: 0.35;
+}
+.task-details {
+  padding: 0 16px 15px 47px;
+}
+.task-description {
+  color: #4f5566;
+  font-size: 13px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.no-description {
+  color: #696d7a;
+  font-style: italic;
+}
+.detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 14px;
+}
+.detail-actions > button {
+  min-height: 44px;
+  font-size: 11px;
+}
+.move-controls {
+  display: inline-flex;
+  gap: 2px;
+}
+.move-controls button {
+  width: 44px;
+  height: 44px;
+}
+.drag-notice {
+  margin-top: 14px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #eef0fb;
+  color: #3d4770;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.task-editor {
+  background: #fff;
+  max-height: 88svh;
+  overflow-y: auto;
+}
+.task-editor [data-slot='dialog-close'] {
+  width: 44px;
+  height: 44px;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+}
+.task-editor [data-slot='dialog-title'] {
+  padding-right: 24px;
+}
+.editor-description-label {
+  margin-top: 18px;
+}
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 8px;
+  margin-top: 22px;
+}
+.editor-actions button {
+  min-height: 44px;
+}
+.editor-conflict {
+  background: #fff9f0;
+  border-color: #e0bc8d;
+  color: #775122;
+}
+.editor-conflict [data-slot='alert-description'] {
+  color: #775122;
+}
+@media (max-width: 600px) {
+  .sort-hint {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .task-trigger {
+    gap: 4px;
+  }
+  .task-row {
+    gap: 6px;
+    padding-left: 10px;
+  }
+  .task-details {
+    padding-left: 36px;
+    padding-right: 10px;
+  }
+  .task-label {
+    font-size: 13px;
+  }
+  .description-field textarea,
+  .task-editor input,
+  .task-editor textarea {
+    font-size: 16px;
+  }
+  .task-editor {
+    padding: 22px 18px;
+  }
+  .editor-actions {
+    gap: 6px;
+  }
+  .editor-actions button {
+    font-size: 12px;
   }
 }

@@ -2,7 +2,7 @@ import { reduceTasks, type TaskAction, type TaskState } from '../domain/tasks'
 import { createRepository, decodeTasks, type StorageBackend } from '../data/storage'
 
 export interface Snapshot extends TaskState {
-  readonly persistence: 'saved' | 'corrupt' | 'memory' | 'conflict'
+  readonly persistence: 'saved' | 'corrupt' | 'memory' | 'conflict' | 'outdated'
   readonly announcement: string
   readonly revision: number
 }
@@ -21,6 +21,7 @@ export function createTaskStore(backend: StorageBackend | null) {
   }
   const listeners = new Set<() => void>()
   let hasUnsavedChanges = false
+  let hasSeenV2 = initial.status === 'saved' && initial.version === 2
 
   function publish(next: Omit<Snapshot, 'revision'>) {
     snapshot = { ...next, revision: snapshot.revision + 1 }
@@ -39,7 +40,9 @@ export function createTaskStore(backend: StorageBackend | null) {
       const next = reduceTasks(snapshot, action)
       if (next === snapshot) return
       const persistence =
-        snapshot.persistence === 'corrupt' || snapshot.persistence === 'conflict'
+        snapshot.persistence === 'corrupt' ||
+        snapshot.persistence === 'conflict' ||
+        snapshot.persistence === 'outdated'
           ? snapshot.persistence
           : repository.save(next.tasks)
             ? 'saved'
@@ -51,8 +54,13 @@ export function createTaskStore(backend: StorageBackend | null) {
             ? 'Задача удалена. Можно отменить удаление.'
             : action.type === 'undo'
               ? 'Задача восстановлена.'
-              : ''
+              : action.type === 'update'
+                ? 'Задача изменена.'
+                : action.type === 'move'
+                  ? `Задача перемещена на позицию ${next.tasks.findIndex((task) => task.id === action.id) + 1} из ${next.tasks.length}.`
+                  : ''
       hasUnsavedChanges = persistence !== 'saved'
+      if (!hasUnsavedChanges) hasSeenV2 = true
       publish({ ...next, persistence, announcement })
     },
     receive(raw: string | null) {
@@ -66,11 +74,28 @@ export function createTaskStore(backend: StorageBackend | null) {
         })
         return
       }
+      if (hasSeenV2 && external.version === 1) {
+        hasUnsavedChanges = true
+        publish({
+          ...snapshot,
+          deleted: null,
+          persistence: 'outdated',
+          announcement:
+            'Другая вкладка использует старую версию. Текущий список оставлен в памяти.',
+        })
+        return
+      }
+      if (external.version === 2) hasSeenV2 = true
       const matches =
         external.tasks.length === snapshot.tasks.length &&
         external.tasks.every((task, index) => {
           const local = snapshot.tasks[index]
-          return local?.id === task.id && local.text === task.text && local.done === task.done
+          return (
+            local?.id === task.id &&
+            local.title === task.title &&
+            local.description === task.description &&
+            local.done === task.done
+          )
         })
       if (hasUnsavedChanges && !matches) {
         publish({
@@ -84,7 +109,7 @@ export function createTaskStore(backend: StorageBackend | null) {
       hasUnsavedChanges = false
       if (matches && snapshot.persistence === 'saved') return
       publish({
-        tasks: external.tasks,
+        tasks: matches ? snapshot.tasks : external.tasks,
         deleted: null,
         persistence: 'saved',
         announcement: 'Список обновлён в другой вкладке.',
@@ -93,6 +118,7 @@ export function createTaskStore(backend: StorageBackend | null) {
     recover() {
       const saved = repository.save(snapshot.tasks)
       hasUnsavedChanges = !saved
+      if (saved) hasSeenV2 = true
       publish({
         ...snapshot,
         persistence: saved ? 'saved' : 'memory',
