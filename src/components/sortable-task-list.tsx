@@ -70,40 +70,46 @@ function TaskRow({
               <ChevronDown size={16} aria-hidden="true" className="task-chevron" />
             </button>
           </CollapsibleTrigger>
-          <Button
-            ref={handleRef}
-            id={`drag-${task.id}`}
-            variant="ghost"
-            size="icon"
-            className="drag-handle"
-            disabled={tasks.length < 2}
-            aria-label={`Переместить: ${task.title}`}
-          >
-            <GripVertical size={17} aria-hidden="true" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="delete-button"
-            aria-label={`Удалить: ${task.title}`}
-            onClick={() => onDelete(task, index)}
-          >
-            <Trash2 aria-hidden="true" size={17} />
-          </Button>
+          <div className="task-actions">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="edit-button"
+              onClick={() => onEdit(task)}
+              aria-label={`Изменить: ${task.title}`}
+              title="Редактировать задачу"
+            >
+              <span className="edit-button-icon">
+                <Pencil size={16} aria-hidden="true" />
+              </span>
+            </Button>
+            <Button
+              ref={handleRef}
+              id={`drag-${task.id}`}
+              variant="ghost"
+              size="icon"
+              className="drag-handle"
+              disabled={tasks.length < 2}
+              aria-label={`Переместить: ${task.title}`}
+            >
+              <GripVertical size={17} aria-hidden="true" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="delete-button"
+              aria-label={`Удалить: ${task.title}`}
+              onClick={() => onDelete(task, index)}
+            >
+              <Trash2 aria-hidden="true" size={17} />
+            </Button>
+          </div>
         </div>
         <CollapsibleContent className="task-details">
           <p className={task.description ? 'task-description' : 'task-description no-description'}>
             {task.description || 'Описание пока не добавлено.'}
           </p>
           <div className="detail-actions">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onEdit(task)}
-              aria-label={`Изменить: ${task.title}`}
-            >
-              <Pencil size={14} aria-hidden="true" /> Изменить
-            </Button>
             <span className="move-controls">
               <Button
                 variant="ghost"

@@ -374,6 +374,35 @@ input:focus-visible {
   text-decoration: line-through;
   text-decoration-color: #a9aebd;
 }
+/* Keep the hit area generous while the pencil itself stays visually light. */
+.task-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.edit-button {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: #475bb9;
+}
+.edit-button-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #eef1fc;
+  transition: background 0.15s ease;
+}
+.edit-button:hover {
+  background: #e9edfc;
+  color: #3045ae;
+}
+.edit-button:hover .edit-button-icon {
+  background: #e1e7fc;
+}
 .delete-button {
   width: 44px;
   height: 44px;
@@ -711,13 +740,9 @@ input:focus-visible {
 .detail-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
   margin-top: 14px;
-}
-.detail-actions > button {
-  min-height: 44px;
-  font-size: 11px;
 }
 .move-controls {
   display: inline-flex;
@@ -805,5 +830,18 @@ input:focus-visible {
   }
   .editor-actions button {
     font-size: 12px;
+  }
+}
+
+@media (max-width: 380px) {
+  .task-row {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 0 8px;
+    padding-right: 8px;
+  }
+  .task-actions {
+    grid-column: 2;
+    justify-self: end;
   }
 }
