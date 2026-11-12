@@ -67,15 +67,7 @@ function TaskRow({
               title={task.title}
             >
               <span className="sr-only">Подробности: </span>
-              <span className="task-title-copy">
-                <span className="task-label">{task.title}</span>
-                {!open && task.description && (
-                  <>
-                    {' '}
-                    <span className="task-preview">{task.description.split(/\r?\n/)[0]}</span>
-                  </>
-                )}
-              </span>
+              <span className="task-label">{task.title}</span>
               <ChevronDown size={16} aria-hidden="true" className="task-chevron" />
             </button>
           </CollapsibleTrigger>

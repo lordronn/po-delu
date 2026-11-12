@@ -788,15 +788,22 @@ test('composer focuses details, preserves a collapsed draft and resets after but
   await expect(input(page)).toHaveValue('')
   await expect(input(page)).toBeFocused()
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-  await expect(page.locator('.task-preview')).toHaveText('Проверить интерфейс на телефоне.')
+  await expect(page.locator('.task-description')).toHaveCount(0)
   await page.reload()
-  await expect(page.locator('.task-preview')).toHaveText('Проверить интерфейс на телефоне.')
-  if (test.info().project.use.hasTouch) await page.locator('.task-preview').tap()
-  else await page.locator('.task-preview').click()
-  await expect(page.locator('.task-preview')).toHaveCount(0)
+  await expect(page.locator('.task-description')).toHaveCount(0)
+  const details = page.getByRole('button', {
+    name: 'Подробности: Подготовить тестовое',
+    exact: true,
+  })
+  if (test.info().project.use.hasTouch) await details.locator('.task-chevron').tap()
+  else await details.locator('.task-chevron').click()
+  await expect(details).toHaveAttribute('aria-expanded', 'true')
   await expect(page.locator('.task-description')).toHaveText(
     'Проверить интерфейс на телефоне.\nПриложить ссылку на GitHub.',
   )
+  await details.press('Enter')
+  await expect(details).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.locator('.task-description')).toHaveCount(0)
   await toggle.click()
   await expect(description).toHaveValue('')
 })
@@ -831,4 +838,33 @@ test('keeps composer and editor actions reachable in a short landscape viewport'
     .getByRole('button', { name: 'Подробности: Проверить мобильную версию', exact: false })
     .click()
   await expect(page.locator('.task-description')).toHaveText('Длинный текст.\n'.repeat(30).trim())
+})
+
+test('arrow fully hides both single-line and multiline descriptions after repeated toggles', async ({
+  page,
+}) => {
+  for (const [title, description] of [
+    ['Короткое описание', 'Текст виден только после раскрытия.'],
+    ['Длинное описание', 'Первая строка описания.\nВторая строка описания.'],
+  ] as const) {
+    await addTask(page, title, description)
+    const details = page.getByRole('button', { name: `Подробности: ${title}`, exact: true })
+    const row = page.locator('.task-item').filter({ has: details })
+    await expect(details).toHaveAttribute('aria-expanded', 'false')
+    await expect(row.locator('.task-description')).toHaveCount(0)
+    for (let cycle = 0; cycle < 2; cycle++) {
+      const arrow = details.locator('.task-chevron')
+      if (test.info().project.use.hasTouch) await arrow.tap()
+      else await arrow.click()
+      await expect(details).toHaveAttribute('aria-expanded', 'true')
+      await expect(row.locator('.task-description')).toHaveText(description)
+      await details.focus()
+      await details.press('Enter')
+      await expect(details).toHaveAttribute('aria-expanded', 'false')
+      await expect(row.locator('.task-description')).toHaveCount(0)
+    }
+  }
+  await page.reload()
+  await expect(page.locator('.task-description')).toHaveCount(0)
+  await audit(page)
 })
