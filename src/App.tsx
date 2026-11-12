@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { Check, CheckCheck, ListTodo, RotateCcw, ArrowUpDown, TriangleAlert } from 'lucide-react'
+import { Check, CheckCheck, ListTodo, RotateCcw, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import type { Task } from '@/domain/tasks'
@@ -44,7 +44,6 @@ const storageMessages = {
 export default function App({ store, backend }: AppProps) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const { tasks, deleted, persistence } = snapshot
-  const [ordering, setOrdering] = useState(false)
   const [editing, setEditing] = useState<Task | null>(null)
   const [dragNotice, setDragNotice] = useState<string | null>(null)
   const pendingFocus = useRef<string | null>(null)
@@ -190,29 +189,7 @@ export default function App({ store, backend }: AppProps) {
               <h2 id="list-title">
                 Все задачи <span className="sr-only">{tasks.length}</span>
               </h2>
-              {(tasks.length > 1 || ordering) && (
-                <Button
-                  id="order-mode"
-                  variant="ghost"
-                  size="sm"
-                  className="order-button"
-                  aria-pressed={ordering}
-                  onClick={() => setOrdering((value) => !value)}
-                >
-                  {ordering ? (
-                    <Check size={15} aria-hidden="true" />
-                  ) : (
-                    <ArrowUpDown size={15} aria-hidden="true" />
-                  )}
-                  {ordering ? 'Готово' : 'Порядок'}
-                </Button>
-              )}
             </div>
-            {ordering && (
-              <p className="sort-hint" role="status">
-                Перетаскивайте задачи за ручку. С клавиатуры: пробел, стрелки, Enter.
-              </p>
-            )}
             {tasks.length === 0 ? (
               <div className="empty-state">
                 <ListTodo size={25} strokeWidth={1.5} aria-hidden="true" />
@@ -222,7 +199,6 @@ export default function App({ store, backend }: AppProps) {
             ) : (
               <SortableTaskList
                 tasks={tasks}
-                ordering={ordering}
                 onToggle={(id) => store.dispatch({ type: 'toggle', id })}
                 onDelete={removeTask}
                 onEdit={setEditing}

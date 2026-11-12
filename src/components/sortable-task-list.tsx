@@ -12,7 +12,6 @@ import type { Task } from '@/domain/tasks'
 type Move = (id: string, overId: string, expected?: readonly Task[]) => void
 interface Props {
   tasks: readonly Task[]
-  ordering: boolean
   onToggle: (id: string) => void
   onDelete: (task: Task, index: number) => void
   onEdit: (task: Task) => void
@@ -26,7 +25,6 @@ function TaskRow({
   onToggle,
   onDelete,
   onEdit,
-  ordering,
 }: Props & { task: Task; index: number }) {
   const [open, setOpen] = useState(false)
   const hasDescription = !!task.description
@@ -37,7 +35,7 @@ function TaskRow({
   const { ref, handleRef, isDragSource, isDropTarget } = useSortable({
     id: task.id,
     index,
-    disabled: !ordering || tasks.length < 2,
+    disabled: tasks.length < 2,
     transition: null,
     // Keep React as the sole owner of list order, including during external updates.
     plugins: (defaults) => defaults.filter((plugin) => plugin !== OptimisticSortingPlugin),
@@ -52,7 +50,21 @@ function TaskRow({
         data-over={isDropTarget}
         data-done={task.done}
       >
-        <div className="task-row">
+        <div className="task-row" data-sortable={tasks.length > 1}>
+          {/* Keep a stable sensor target so dnd-kit never annotates the entire row as a button. */}
+          <Button
+            ref={handleRef}
+            id={`drag-${task.id}`}
+            variant="ghost"
+            size="icon"
+            className="drag-handle"
+            hidden={tasks.length < 2}
+            disabled={tasks.length < 2}
+            aria-label={`Переместить: ${task.title}`}
+          >
+            <GripVertical size={17} aria-hidden="true" />
+          </Button>
+
           <Checkbox
             id={`task-${task.id}`}
             checked={task.done}
@@ -79,32 +91,17 @@ function TaskRow({
             </span>
           )}
           <div className="task-actions">
-            {/* Keep a stable sensor target so dnd-kit never annotates the entire row as a button. */}
             <Button
-              ref={handleRef}
-              id={`drag-${task.id}`}
+              id={`edit-${task.id}`}
               variant="ghost"
               size="icon"
-              className="drag-handle"
-              hidden={!ordering || tasks.length < 2}
-              disabled={!ordering || tasks.length < 2}
-              aria-label={`Переместить: ${task.title}`}
+              className="edit-button"
+              onClick={() => onEdit(task)}
+              aria-label={`Изменить: ${task.title}`}
+              title="Редактировать задачу"
             >
-              <GripVertical size={17} aria-hidden="true" />
+              <Pencil size={16} aria-hidden="true" />
             </Button>
-            {(!ordering || tasks.length < 2) && (
-              <Button
-                id={`edit-${task.id}`}
-                variant="ghost"
-                size="icon"
-                className="edit-button"
-                onClick={() => onEdit(task)}
-                aria-label={`Изменить: ${task.title}`}
-                title="Редактировать задачу"
-              >
-                <Pencil size={16} aria-hidden="true" />
-              </Button>
-            )}
             <Button
               id={`delete-${task.id}`}
               variant="ghost"

@@ -28,8 +28,6 @@ async function keyboardMove(
   key: 'ArrowUp' | 'ArrowDown',
   target: string,
 ) {
-  const order = page.getByRole('button', { name: 'Порядок', exact: true })
-  if (await order.count()) await order.click()
   const handle = page.getByRole('button', { name: `Переместить: ${title}`, exact: true })
   await handle.focus()
   await page
@@ -474,7 +472,6 @@ test('pointer drag reorders by the handle, persists and does not toggle or expan
   await addTask(page, 'Первое')
   await addTask(page, 'Второе')
   await addTask(page, 'Третье')
-  await page.getByRole('button', { name: 'Порядок', exact: true }).click()
   await page.getByRole('button', { name: 'Переместить: Третье', exact: true }).focus()
   await page
     .locator('.task-list')
@@ -491,7 +488,7 @@ test('pointer drag reorders by the handle, persists and does not toggle or expan
   ).toHaveCount(1)
   const to = await page.locator('.task-list > .task-item:not([inert])').last().boundingBox()
   if (!to) throw new Error('Drop target must be rendered')
-  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 })
+  await page.mouse.move(from.x + from.width / 2, to.y + to.height / 2, { steps: 12 })
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-over="true"]').locator('.task-label'),
   ).toHaveText('Первое')
@@ -513,7 +510,6 @@ test('keyboard drag supports reorder and Escape cancellation', async ({ page }) 
   await addTask(page, 'Первое')
   await addTask(page, 'Второе')
   await addTask(page, 'Третье')
-  await page.getByRole('button', { name: 'Порядок', exact: true }).click()
   const handle = page.getByRole('button', { name: 'Переместить: Третье', exact: true })
   await handle.focus()
   await page
@@ -552,7 +548,6 @@ test('external updates during a drag cancel its commit instead of applying stale
   await addTask(page, 'Второе')
   const other = await context.newPage()
   await other.goto('/')
-  await page.getByRole('button', { name: 'Порядок', exact: true }).click()
   const handle = page.getByRole('button', { name: 'Переместить: Второе', exact: true })
   await handle.focus()
   await page
@@ -748,7 +743,6 @@ test('storage recovery with identical tasks does not invalidate an active drag',
   await page
     .locator('.task-list')
     .evaluate((element) => element.scrollIntoView({ block: 'center' }))
-  await page.getByRole('button', { name: 'Порядок', exact: true }).click()
   await page.getByRole('button', { name: 'Переместить: Второе', exact: true }).focus()
   await page.keyboard.press('Space')
   await expect(
@@ -895,7 +889,7 @@ test('arrow fully hides both single-line and multiline descriptions after repeat
   await audit(page)
 })
 
-test('compact rows keep actions aligned and reveal handles only in order mode', async ({
+test('compact rows keep drag, edit and delete available without a mode switch', async ({
   page,
 }) => {
   await addTask(page, 'Без описания')
@@ -904,7 +898,7 @@ test('compact rows keep actions aligned and reveal handles only in order mode', 
   await expect(
     page.getByRole('button', { name: 'Подробности: Без описания', exact: true }),
   ).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /^Переместить:/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Переместить:/ })).toHaveCount(2)
   await expect(page.getByRole('listitem')).toHaveCount(2)
   const first = page.locator('.task-item').first()
   const row = await first.boundingBox()
@@ -914,13 +908,13 @@ test('compact rows keep actions aligned and reveal handles only in order mode', 
   expect(Math.abs(checkbox!.y + checkbox!.height / 2 - edit!.y - edit!.height / 2)).toBeLessThan(1)
   expect(edit!.width).toBeGreaterThanOrEqual(44)
   expect(edit!.height).toBeGreaterThanOrEqual(44)
-  await page.getByRole('button', { name: 'Порядок', exact: true }).press('Enter')
-  await expect(page.getByRole('button', { name: /^Переместить:/ })).toHaveCount(2)
-  await expect(page.getByRole('button', { name: /^Изменить:/ })).toHaveCount(0)
-  await audit(page)
-  await page.getByRole('button', { name: 'Готово', exact: true }).press('Enter')
-  await expect(page.getByRole('button', { name: /^Переместить:/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Порядок', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^Изменить:/ })).toHaveCount(2)
+  const handle = await first.getByRole('button', { name: /^Переместить:/ }).boundingBox()
+  expect(handle!.width).toBeGreaterThanOrEqual(44)
+  expect(handle!.height).toBeGreaterThanOrEqual(44)
+  expect(handle!.x).toBeGreaterThanOrEqual(0)
+  expect(handle!.x + handle!.width).toBeLessThanOrEqual(checkbox!.x - 12 + 1)
   await expect(page.getByRole('checkbox').first()).toBeEnabled()
   await expect(page.getByRole('button', { name: /^Удалить:/ }).first()).toBeEnabled()
   await expect(page.getByRole('menu')).toHaveCount(0)
@@ -979,7 +973,6 @@ test('touch drag by the handle reorders tasks and persists without completing th
   await addTask(page, 'Первое')
   await addTask(page, 'Второе')
   await addTask(page, 'Третье')
-  await page.getByRole('button', { name: 'Порядок', exact: true }).tap()
   await page
     .locator('.task-list')
     .evaluate((element) => element.scrollIntoView({ block: 'center' }))
@@ -1018,7 +1011,32 @@ test('touch drag by the handle reorders tasks and persists without completing th
     await expect(page.getByRole('checkbox', { checked: true })).toHaveCount(0)
     await page.reload()
     await expect(page.locator('.task-label')).toHaveText(['Второе', 'Первое', 'Третье'])
-    await expect(page.getByRole('button', { name: /^Переместить:/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^Переместить:/ })).toHaveCount(3)
+    for (let index = 0; index < 8; index++) await addTask(page, `Дополнительная задача ${index}`)
+    await input(page).blur()
+    await page.evaluate(() => scrollTo(0, 0))
+    const beforeScroll = await page.locator('.task-label').allTextContents()
+    const viewport = page.viewportSize()!
+    const scrollStart = viewport.height - 100
+    const scrollPoint = (nextY: number) => [
+      { x: viewport.width / 2, y: nextY, id: 0, radiusX: 6, radiusY: 6, force: 1 },
+    ]
+    await session.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: scrollPoint(scrollStart),
+    })
+    for (let step = 1; step <= 12; step++) {
+      await session.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: scrollPoint(scrollStart - (220 * step) / 12),
+      })
+    }
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(40)
+    await expect(
+      page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
+    ).toHaveCount(0)
+    await expect(page.locator('.task-label')).toHaveText(beforeScroll)
   } finally {
     await session
       .send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
