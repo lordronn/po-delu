@@ -154,7 +154,7 @@ test('undo restores the previous position and completion state without a timer',
   await expect(page.getByRole('checkbox', { name: /Первое/ })).toBeFocused()
   await addTask(page, 'Четвёртое')
   await page.getByRole('button', { name: 'Отменить', exact: true }).click()
-  await expect(page.locator('.task-label')).toHaveText(['Четвёртое', 'Третье', 'Второе', 'Первое'])
+  await expect(page.locator('.task-label')).toHaveText(['Четвёртое', 'Третье', 'Первое', 'Второе'])
   await expect(page.getByRole('checkbox', { name: /Второе/ })).toBeChecked()
   await page.reload()
   await expect(page.getByRole('checkbox', { name: /Второе/ })).toBeChecked()
@@ -459,14 +459,12 @@ test('drag and undo preserve details, state and order', async ({ page }) => {
   await keyboardMove(page, 'Первое', 'ArrowUp', 'Второе')
   await expect(page.locator('.task-label')).toHaveText(['Первое', 'Второе'])
   await page.getByRole('button', { name: 'Отменить', exact: true }).click()
-  await expect(page.locator('.task-label')).toHaveText(['Третье', 'Первое', 'Второе'])
+  await expect(page.locator('.task-label')).toHaveText(['Первое', 'Третье', 'Второе'])
   await page.reload()
-  await expect(page.locator('.task-label')).toHaveText(['Третье', 'Первое', 'Второе'])
+  await expect(page.locator('.task-label')).toHaveText(['Первое', 'Третье', 'Второе'])
   await expect(page.getByRole('checkbox', { name: /Третье/ })).toBeChecked()
   await page.getByRole('button', { name: 'Подробности: Третье', exact: false }).click()
-  await expect(page.locator('.task-item').first().locator('.task-description')).toHaveText(
-    'Детали третьего',
-  )
+  await expect(page.locator('.task-description')).toHaveText('Детали третьего')
 })
 
 test('pointer drag reorders by the handle, persists and does not toggle or expand', async ({
@@ -773,26 +771,27 @@ test('storage recovery with identical tasks does not invalidate an active drag',
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
-  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowUp')
   await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
-    'Первое',
     'Второе',
+    'Первое',
   ])
   await other.evaluate((key) => {
     const data = JSON.parse(localStorage.getItem(key)!)
     data.tasks[0].done = true
+    data.tasks.push(data.tasks.shift())
     localStorage.setItem(key, JSON.stringify(data))
   }, STORAGE_KEY)
   await expect(page.getByRole('alert')).toHaveCount(0)
   await page.evaluate(() => window.dispatchEvent(new Event('allow-writes')))
   await page.keyboard.press('Enter')
   await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
-    'Первое',
     'Второе',
+    'Первое',
   ])
   await expect(page.locator('.drag-notice')).toHaveCount(0)
   await page.reload()
-  await expect(page.locator('.task-label')).toHaveText(['Первое', 'Второе'])
+  await expect(page.locator('.task-label')).toHaveText(['Второе', 'Первое'])
   await other.close()
 })
 
@@ -1152,4 +1151,76 @@ test('external deletion during live preview removes the task cleanly and allows 
   await expect(page.locator('.task-label')).toHaveText(['Второе', 'После удаления', 'Первое'])
   expect(errors).toEqual([])
   await other.close()
+})
+
+test('completion animates a task to the bottom and reopening returns it to the top', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await addTask(page, 'Первое')
+  await addTask(page, 'Второе')
+  await addTask(page, 'Третье', 'Сохранить описание при выполнении.')
+  await page.getByRole('button', { name: 'Подробности: Третье', exact: true }).click()
+  const checkbox = page.getByRole('checkbox', { name: /Третье/ })
+  const motion = checkbox.evaluate(
+    (button) =>
+      new Promise<number[]>((resolve) => {
+        const row = button.closest('.task-item')!
+        button.addEventListener(
+          'click',
+          () => {
+            const positions: number[] = []
+            const started = performance.now()
+            const sample = () => {
+              positions.push(row.getBoundingClientRect().y)
+              if (performance.now() - started < 500) requestAnimationFrame(sample)
+              else resolve(positions)
+            }
+            requestAnimationFrame(sample)
+          },
+          { once: true },
+        )
+      }),
+  )
+  await checkbox.check()
+  const positions = await motion
+  const start = Math.min(...positions)
+  const end = Math.max(...positions)
+  expect(end - start).toBeGreaterThan(40)
+  expect(positions.some((y) => y > start + 4 && y < end - 4)).toBe(true)
+  await expect(page.locator('.task-label')).toHaveText(['Второе', 'Первое', 'Третье'])
+  await expect(checkbox).toBeChecked()
+  await expect(page.getByRole('checkbox', { name: /Второе/ })).toBeFocused()
+  await expect(page.locator('.task-description')).toHaveText('Сохранить описание при выполнении.')
+  await page.reload()
+  await expect(page.locator('.task-label')).toHaveText(['Второе', 'Первое', 'Третье'])
+  await checkbox.uncheck()
+  await expect(page.locator('.task-label')).toHaveText(['Третье', 'Второе', 'Первое'])
+  await page.reload()
+  await expect(page.locator('.task-label')).toHaveText(['Третье', 'Второе', 'Первое'])
+  await expect(checkbox).not.toBeChecked()
+})
+
+test('completion respects reduced motion while preserving its order and keyboard flow', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await addTask(page, 'Первое')
+  await addTask(page, 'Второе')
+  const checkbox = page.getByRole('checkbox', { name: /Второе/ })
+  await checkbox.focus()
+  await checkbox.press('Space')
+  await expect(page.locator('.task-label')).toHaveText(['Первое', 'Второе'])
+  await expect(page.getByRole('checkbox', { name: /Первое/ })).toBeFocused()
+  const durations = await page
+    .locator('.task-item')
+    .evaluateAll((rows) =>
+      rows.flatMap((row) =>
+        row.getAnimations().map((animation) => animation.effect?.getTiming().duration),
+      ),
+    )
+  expect(durations.every((duration) => duration === 0)).toBe(true)
+  await page.getByRole('checkbox', { name: /Первое/ }).press('Space')
+  await expect(page.locator('.task-label')).toHaveText(['Второе', 'Первое'])
+  await expect(page.getByRole('checkbox', { checked: true })).toHaveCount(2)
 })

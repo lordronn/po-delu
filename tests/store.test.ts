@@ -40,7 +40,7 @@ describe('task store', () => {
     unsubscribe()
     store.dispatch({ type: 'toggle', id: 'a' })
     expect(notifications).toBe(1)
-    expect(store.getSnapshot().announcement).toBe('')
+    expect(store.getSnapshot().announcement).toBe('Задача выполнена.')
     const current = store.getSnapshot()
     store.dispatch({ type: 'toggle', id: 'missing' })
     expect(store.getSnapshot()).toBe(current)
@@ -281,4 +281,21 @@ describe('v2 persistence and concurrent schema versions', () => {
     expect(store.getSnapshot().tasks[0]?.description).toBe('New description')
     expect(storage.writes()).toBe(1)
   })
+})
+
+it('persists automatic completion order and reopening at the top', () => {
+  const storage = fakeStorage()
+  const store = createTaskStore(storage.backend)
+  for (const id of ['a', 'b', 'c']) store.dispatch({ type: 'add', id, title: id, description: '' })
+  store.dispatch({ type: 'toggle', id: 'c' })
+  let restored = createTaskStore(storage.backend)
+  expect(restored.getSnapshot().tasks.map((task) => task.id)).toEqual(['b', 'a', 'c'])
+  expect(restored.getSnapshot().tasks[2]?.done).toBe(true)
+  restored.dispatch({ type: 'toggle', id: 'c' })
+  expect(restored.getSnapshot().announcement).toBe(
+    'Задача возвращена в работу и перемещена в начало списка.',
+  )
+  restored = createTaskStore(storage.backend)
+  expect(restored.getSnapshot().tasks.map((task) => task.id)).toEqual(['c', 'b', 'a'])
+  expect(restored.getSnapshot().tasks[0]?.done).toBe(false)
 })

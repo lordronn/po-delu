@@ -58,7 +58,13 @@ export function createTaskStore(backend: StorageBackend | null) {
                 ? 'Задача изменена.'
                 : action.type === 'move'
                   ? `Задача перемещена на позицию ${next.tasks.findIndex((task) => task.id === action.id) + 1} из ${next.tasks.length}.`
-                  : ''
+                  : next.tasks.find((task) => task.id === action.id)?.done
+                    ? snapshot.tasks.at(-1)?.id === action.id
+                      ? 'Задача выполнена.'
+                      : 'Задача выполнена и перемещена в конец списка.'
+                    : snapshot.tasks[0]?.id === action.id
+                      ? 'Задача возвращена в работу.'
+                      : 'Задача возвращена в работу и перемещена в начало списка.'
       hasUnsavedChanges = persistence !== 'saved'
       if (!hasUnsavedChanges) hasSeenV2 = true
       publish({ ...next, persistence, announcement })

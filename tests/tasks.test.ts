@@ -51,10 +51,11 @@ describe('task transitions', () => {
     },
   )
 
-  it('toggles twice without moving tasks', () => {
+  it('completes at the bottom and returns to work at the top', () => {
     const next = reduceTasks(populated, { type: 'toggle', id: 'a' })
-    expect(next.tasks.map((task) => task.id)).toEqual(['a', 'b', 'c'])
-    expect(next.tasks[0]?.done).toBe(true)
+    expect(next.tasks.map((task) => task.id)).toEqual(['b', 'c', 'a'])
+    expect(next.tasks[2]?.done).toBe(true)
+    expect(next.tasks[0]).toBe(populated.tasks[1])
     expect(reduceTasks(next, { type: 'toggle', id: 'a' })).toEqual(populated)
     expect(populated.tasks[0]?.done).toBe(false)
   })
@@ -183,4 +184,30 @@ describe('task transitions', () => {
     const last = reduceTasks(populated, { type: 'delete', id: 'c' })
     expect(reduceTasks(last, { type: 'undo' })).toEqual(populated)
   })
+})
+
+it('moves only the toggled task and keeps the relative order and references of all others', () => {
+  const initial = {
+    tasks: populated.tasks.map((task) => ({ ...task, done: false })),
+    deleted: null,
+  }
+  const first = reduceTasks(initial, { type: 'toggle', id: 'a' })
+  const second = reduceTasks(first, { type: 'toggle', id: 'b' })
+  expect(second.tasks.map((task) => task.id)).toEqual(['c', 'a', 'b'])
+  expect(second.tasks[0]).toBe(initial.tasks[2])
+  const reopened = reduceTasks(second, { type: 'toggle', id: 'a' })
+  expect(reopened.tasks.map((task) => task.id)).toEqual(['a', 'c', 'b'])
+  expect(reopened.tasks[1]).toBe(second.tasks[0])
+  expect(reopened.tasks[2]).toBe(second.tasks[2])
+  expect(initial.tasks.every((task) => !task.done)).toBe(true)
+})
+
+it('restores a deletion against surviving neighbors after a completion reorder', () => {
+  const deleted = reduceTasks(populated, { type: 'delete', id: 'b' })
+  const completed = reduceTasks(deleted, { type: 'toggle', id: 'a' })
+  const restored = reduceTasks(completed, { type: 'undo' })
+  expect(restored.tasks.map((task) => task.id)).toEqual(['b', 'c', 'a'])
+  expect(restored.tasks[0]?.done).toBe(true)
+  expect(restored.tasks[2]?.done).toBe(true)
+  expect(restored.deleted).toBeNull()
 })

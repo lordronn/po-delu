@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DragDropProvider, type DragEndEvent } from '@dnd-kit/react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { Accessibility, Feedback } from '@dnd-kit/dom'
@@ -124,6 +124,44 @@ function TaskRow({
 }
 
 export function SortableTaskList(props: Props) {
+  const listRef = useRef<HTMLUListElement>(null)
+  const completion = useRef<Map<string, number> | null>(null)
+  const animations = useRef<Animation[]>([])
+  function cancelAnimations() {
+    animations.current.forEach((animation) => animation.cancel())
+    animations.current = []
+  }
+  useLayoutEffect(() => {
+    const before = completion.current
+    completion.current = null
+    cancelAnimations()
+    if (!before || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    // FLIP: React commits the final order; animate from each row's previous visual position.
+    listRef.current?.querySelectorAll<HTMLElement>(':scope > [data-task-id]').forEach((row) => {
+      const previousY = before.get(row.dataset.taskId ?? '')
+      if (previousY === undefined) return
+      const offset = previousY - row.getBoundingClientRect().y
+      if (Math.abs(offset) < 1) return
+      animations.current.push(
+        row.animate([{ translate: `0 ${offset}px` }, { translate: '0 0' }], {
+          duration: 280,
+          easing: 'cubic-bezier(.2,.8,.2,1)',
+        }),
+      )
+    })
+  }, [props.tasks])
+  useEffect(() => () => cancelAnimations(), [])
+  function toggleTask(id: string) {
+    completion.current = drag.current
+      ? null
+      : new Map(
+          Array.from(listRef.current?.children ?? [], (row) => [
+            (row as HTMLElement).dataset.taskId ?? '',
+            row.getBoundingClientRect().y,
+          ]),
+        )
+    props.onToggle(id)
+  }
   const drag = useRef<{
     base: readonly Task[]
     tasks: readonly Task[]
@@ -154,6 +192,7 @@ export function SortableTaskList(props: Props) {
         }),
       ]}
       onDragStart={(event) => {
+        cancelAnimations()
         const activeId = String(event.operation.source?.id ?? '')
         drag.current = { base: props.tasks, tasks: props.tasks, revision: 0, activeId }
         setPreview({ base: props.tasks, tasks: props.tasks, activeId })
@@ -205,7 +244,7 @@ export function SortableTaskList(props: Props) {
         props.onMove(String(source.id), over.id, expected)
       }}
     >
-      <ul className="task-list" aria-label="Задачи">
+      <ul ref={listRef} className="task-list" aria-label="Задачи">
         {visibleTasks.map((task, index) => (
           <TaskRow
             key={task.id}
@@ -214,6 +253,7 @@ export function SortableTaskList(props: Props) {
             task={task}
             index={index}
             activeId={preview?.base === props.tasks ? preview.activeId : null}
+            onToggle={toggleTask}
             onDelete={(deleted) =>
               props.onDelete(
                 deleted,

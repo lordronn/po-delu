@@ -88,13 +88,11 @@ export function reduceTasks(state: TaskState, action: TaskAction): TaskState {
       return { ...state, tasks }
     }
     case 'toggle': {
-      if (!state.tasks.some((task) => task.id === action.id)) return state
-      return {
-        ...state,
-        tasks: state.tasks.map((task) =>
-          task.id === action.id ? { ...task, done: !task.done } : task,
-        ),
-      }
+      const current = state.tasks.find((task) => task.id === action.id)
+      if (!current) return state
+      const toggled = { ...current, done: !current.done }
+      const others = state.tasks.filter((task) => task.id !== action.id)
+      return { ...state, tasks: toggled.done ? [...others, toggled] : [toggled, ...others] }
     }
     case 'delete': {
       const index = state.tasks.findIndex((task) => task.id === action.id)

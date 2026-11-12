@@ -47,6 +47,7 @@ export default function App({ store, backend }: AppProps) {
   const [editing, setEditing] = useState<Task | null>(null)
   const [dragNotice, setDragNotice] = useState<string | null>(null)
   const pendingFocus = useRef<string | null>(null)
+  const preventFocusScroll = useRef(false)
   const done = tasks.filter((task) => task.done).length
   const remaining = tasks.length - done
 
@@ -75,8 +76,20 @@ export default function App({ store, backend }: AppProps) {
     if (!target) return
     pendingFocus.current = null
     const element = document.getElementById(target) ?? document.getElementById('new-task')
-    element?.focus()
+    element?.focus({ preventScroll: preventFocusScroll.current })
+    preventFocusScroll.current = false
   }, [snapshot])
+
+  function toggleTask(id: string) {
+    const index = tasks.findIndex((task) => task.id === id)
+    const task = tasks[index]
+    if (!task) return
+    const moves = task.done ? index !== 0 : index !== tasks.length - 1
+    const neighbor = moves ? (tasks[index + 1] ?? tasks[index - 1] ?? task) : task
+    pendingFocus.current = `task-${neighbor.id}`
+    preventFocusScroll.current = true
+    store.dispatch({ type: 'toggle', id })
+  }
 
   function removeTask(task: Task, index: number) {
     const neighbor = tasks[index + 1] ?? tasks[index - 1]
@@ -199,7 +212,7 @@ export default function App({ store, backend }: AppProps) {
             ) : (
               <SortableTaskList
                 tasks={tasks}
-                onToggle={(id) => store.dispatch({ type: 'toggle', id })}
+                onToggle={toggleTask}
                 onDelete={removeTask}
                 onEdit={setEditing}
                 onMove={moveTask}
