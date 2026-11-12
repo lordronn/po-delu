@@ -25,7 +25,8 @@ function TaskRow({
   onToggle,
   onDelete,
   onEdit,
-}: Props & { task: Task; index: number }) {
+  activeId,
+}: Props & { task: Task; index: number; activeId: string | null }) {
   const [open, setOpen] = useState(false)
   const hasDescription = !!task.description
   const expanded = open && hasDescription
@@ -36,8 +37,8 @@ function TaskRow({
     id: task.id,
     index,
     disabled: tasks.length < 2,
-    transition: null,
-    // Keep React as the sole owner of list order, including during external updates.
+    transition: activeId === task.id ? null : { duration: 200 },
+    // React owns the live preview as well as the committed order.
     plugins: (defaults) => defaults.filter((plugin) => plugin !== OptimisticSortingPlugin),
   })
   return (
@@ -123,12 +124,23 @@ function TaskRow({
 }
 
 export function SortableTaskList(props: Props) {
-  const start = useRef<readonly Task[] | null>(null)
+  const drag = useRef<{
+    base: readonly Task[]
+    tasks: readonly Task[]
+    revision: number
+    activeId: string
+  } | null>(null)
+  const [preview, setPreview] = useState<{
+    base: readonly Task[]
+    tasks: readonly Task[]
+    activeId: string
+  } | null>(null)
+  const visibleTasks = preview?.base === props.tasks ? preview.tasks : props.tasks
   return (
     <DragDropProvider
       plugins={(defaults) => [
         ...defaults.filter((plugin) => plugin !== Accessibility && plugin !== Feedback),
-        Feedback.configure({ dropAnimation: null }),
+        Feedback.configure({ dropAnimation: null, keyboardTransition: null }),
         Accessibility.configure({
           screenReaderInstructions: {
             draggable:
@@ -141,25 +153,74 @@ export function SortableTaskList(props: Props) {
           },
         }),
       ]}
-      onDragStart={() => {
-        start.current = props.tasks
+      onDragStart={(event) => {
+        const activeId = String(event.operation.source?.id ?? '')
+        drag.current = { base: props.tasks, tasks: props.tasks, revision: 0, activeId }
+        setPreview({ base: props.tasks, tasks: props.tasks, activeId })
       }}
-      onDragEnd={(event) => {
+      onDragOver={(event, manager) => {
         const { source, target } = event.operation
-        const expected = start.current
-        start.current = null
+        const session = drag.current
+        if (!source || !target || !session || session.base !== props.tasks) return
+        const { base, tasks: current } = session
+        const from = current.findIndex((task) => task.id === source.id)
+        const to = current.findIndex((task) => task.id === target.id)
+        if (from < 0 || to < 0 || from === to) return
+        const next = [...current]
+        const [task] = next.splice(from, 1)
+        if (!task) return
+        next.splice(to, 0, task)
+        session.tasks = next
+        const revision = ++session.revision
+        // Measure collisions against the new layout, not a half-committed render.
+        manager.collisionObserver.disable()
+        setPreview({ base, tasks: next, activeId: session.activeId })
+        void manager.renderer.rendering
+          .then(() => {
+            if (drag.current !== session || session.tasks !== next) return
+            return manager.actions.setDropTarget(source.id)
+          })
+          .finally(() => {
+            if (drag.current === session && session.revision === revision)
+              manager.collisionObserver.enable()
+          })
+      }}
+      onDragEnd={(event, manager) => {
+        const { source, target } = event.operation
+        const expected = drag.current?.base
+        const finalOrder = drag.current?.tasks
+        drag.current = null
+        manager.collisionObserver.enable()
+        setPreview(null)
         if (!expected) return
         if (expected !== props.tasks) {
           props.onMove(String(source?.id ?? ''), String(target?.id ?? ''), expected)
           return
         }
-        if (event.canceled || !source || !target || source.id === target.id) return
-        props.onMove(String(source.id), String(target.id), expected)
+        // The preview defines the destination even if collision detection is between frames.
+        if (event.canceled || !source || !finalOrder) return
+        const destination = finalOrder.findIndex((task) => task.id === source.id)
+        const over = expected[destination]
+        if (!over || over.id === source.id) return
+        props.onMove(String(source.id), over.id, expected)
       }}
     >
       <ul className="task-list" aria-label="Задачи">
-        {props.tasks.map((task, index) => (
-          <TaskRow key={task.id} {...props} task={task} index={index} />
+        {visibleTasks.map((task, index) => (
+          <TaskRow
+            key={task.id}
+            {...props}
+            tasks={visibleTasks}
+            task={task}
+            index={index}
+            activeId={preview?.base === props.tasks ? preview.activeId : null}
+            onDelete={(deleted) =>
+              props.onDelete(
+                deleted,
+                props.tasks.findIndex((entry) => entry.id === deleted.id),
+              )
+            }
+          />
         ))}
       </ul>
     </DragDropProvider>

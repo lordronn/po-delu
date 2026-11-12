@@ -37,10 +37,13 @@ async function keyboardMove(
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
+  const destination = (
+    await page.locator('.task-list > .task-item:not([inert]) .task-label').allTextContents()
+  ).indexOf(target)
   await page.keyboard.press(key)
   await expect(
-    page.locator('.task-list > .task-item:not([inert])[data-over="true"] .task-label'),
-  ).toHaveText(target)
+    page.locator('.task-list > .task-item:not([inert]) .task-label').nth(destination),
+  ).toHaveText(title)
   await page.keyboard.press('Enter')
 }
 
@@ -480,6 +483,11 @@ test('pointer drag reorders by the handle, persists and does not toggle or expan
     .getByRole('button', { name: 'Переместить: Третье', exact: true })
     .boundingBox()
   if (!from) throw new Error('Drag source must be rendered')
+  const savedBefore = await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)
+  const neighbor = page
+    .locator('.task-list > .task-item:not([inert])')
+    .filter({ has: page.getByText('Второе', { exact: true }) })
+  const beforeY = (await neighbor.boundingBox())!.y
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
   await page.mouse.down()
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2 + 12, { steps: 3 })
@@ -489,9 +497,23 @@ test('pointer drag reorders by the handle, persists and does not toggle or expan
   const to = await page.locator('.task-list > .task-item:not([inert])').last().boundingBox()
   if (!to) throw new Error('Drop target must be rendered')
   await page.mouse.move(from.x + from.width / 2, to.y + to.height / 2, { steps: 12 })
-  await expect(
-    page.locator('.task-list > .task-item:not([inert])[data-over="true"]').locator('.task-label'),
-  ).toHaveText('Первое')
+  await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+    'Второе',
+    'Первое',
+    'Третье',
+  ])
+  expect(await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)).toBe(savedBefore)
+  await expect.poll(async () => (await neighbor.boundingBox())!.y).toBeLessThan(beforeY - 10)
+  if (
+    process.env.CAPTURE_SCREENSHOTS &&
+    ['desktop', 'mobile', 'compact'].includes(test.info().project.name)
+  ) {
+    await mkdir('docs/screenshots', { recursive: true })
+    await page.screenshot({
+      path: `docs/screenshots/drag-${test.info().project.name}.png`,
+      fullPage: false,
+    })
+  }
   await page.mouse.up()
   await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
     'Второе',
@@ -520,9 +542,11 @@ test('keyboard drag supports reorder and Escape cancellation', async ({ page }) 
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
   await page.keyboard.press('ArrowDown')
-  await expect(
-    page.locator('.task-list > .task-item:not([inert])[data-over="true"]').locator('.task-label'),
-  ).toHaveText('Второе')
+  await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+    'Второе',
+    'Третье',
+    'Первое',
+  ])
   await page.keyboard.press('Enter')
   await expect(page.locator('.task-label')).toHaveText(['Второе', 'Третье', 'Первое'])
   const raw = await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)
@@ -558,9 +582,10 @@ test('external updates during a drag cancel its commit instead of applying stale
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
   await page.keyboard.press('ArrowDown')
-  await expect(
-    page.locator('.task-list > .task-item:not([inert])[data-over="true"]').locator('.task-label'),
-  ).toHaveText('Первое')
+  await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+    'Первое',
+    'Второе',
+  ])
   await addTask(other, 'Внешняя задача')
   await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toContainText([
     'Внешняя задача',
@@ -749,9 +774,10 @@ test('storage recovery with identical tasks does not invalidate an active drag',
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
   await page.keyboard.press('ArrowDown')
-  await expect(
-    page.locator('.task-list > .task-item:not([inert])[data-over="true"]').locator('.task-label'),
-  ).toHaveText('Первое')
+  await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+    'Первое',
+    'Второе',
+  ])
   await other.evaluate((key) => {
     const data = JSON.parse(localStorage.getItem(key)!)
     data.tasks[0].done = true
@@ -999,9 +1025,11 @@ test('touch drag by the handle reorders tasks and persists without completing th
         touchPoints: point(y + ((destination - y) * step) / 12),
       })
     }
-    await expect(
-      page.locator('.task-list > .task-item:not([inert])[data-over="true"] .task-label'),
-    ).toHaveText('Первое')
+    await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+      'Второе',
+      'Первое',
+      'Третье',
+    ])
     await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
     await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
       'Второе',
@@ -1043,4 +1071,85 @@ test('touch drag by the handle reorders tasks and persists without completing th
       .catch(() => {})
     await session.detach()
   }
+})
+
+test('live preview rolls back without saving and supports consecutive cancel and drop operations', async ({
+  page,
+}) => {
+  await addTask(page, 'Первое')
+  await addTask(page, 'Второе')
+  await addTask(page, 'Третье')
+  const titles = page.locator('.task-list > .task-item:not([inert]) .task-label')
+  const saved = await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)
+  const handle = page.getByRole('button', { name: 'Переместить: Третье', exact: true })
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await handle.focus()
+    await handle.press('Space')
+    await expect(
+      page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
+    ).toHaveCount(1)
+    await page.keyboard.press('ArrowDown')
+    await expect(titles).toHaveText(['Второе', 'Третье', 'Первое'])
+    expect(await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)).toBe(saved)
+    await page.keyboard.press('Escape')
+    await expect(titles).toHaveText(['Третье', 'Второе', 'Первое'])
+    expect(await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)).toBe(saved)
+  }
+  await handle.focus()
+  await handle.press('Space')
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
+  ).toHaveCount(1)
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
+  await expect(titles).toHaveText(['Второе', 'Первое', 'Третье'])
+  await page.keyboard.press('Escape')
+  await expect(titles).toHaveText(['Третье', 'Второе', 'Первое'])
+  await keyboardMove(page, 'Третье', 'ArrowDown', 'Второе')
+  await expect(titles).toHaveText(['Второе', 'Третье', 'Первое'])
+  await page.reload()
+  await expect(titles).toHaveText(['Второе', 'Третье', 'Первое'])
+})
+
+test('external deletion during live preview removes the task cleanly and allows another drag', async ({
+  page,
+  context,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await addTask(page, 'Первое')
+  await addTask(page, 'Второе')
+  await addTask(page, 'Третье')
+  const other = await context.newPage()
+  await other.goto('/')
+  const handle = page.getByRole('button', { name: 'Переместить: Третье', exact: true })
+  await handle.focus()
+  await handle.press('Space')
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
+  ).toHaveCount(1)
+  await page.keyboard.press('ArrowDown')
+  await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+    'Второе',
+    'Третье',
+    'Первое',
+  ])
+  await deleteTask(other, 'Третье')
+  await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+    'Второе',
+    'Первое',
+  ])
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('listitem')).toHaveCount(2)
+  await addTask(page, 'После удаления')
+  await keyboardMove(page, 'После удаления', 'ArrowDown', 'Второе')
+  await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+    'Второе',
+    'После удаления',
+    'Первое',
+  ])
+  await page.reload()
+  await expect(page.locator('.task-label')).toHaveText(['Второе', 'После удаления', 'Первое'])
+  expect(errors).toEqual([])
+  await other.close()
 })
