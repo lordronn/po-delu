@@ -21,6 +21,7 @@ export interface DeletedTask {
 
 export interface TaskState {
   readonly tasks: readonly Task[]
+  readonly trash: readonly Task[]
   readonly deleted: DeletedTask | null
 }
 
@@ -31,6 +32,8 @@ export type TaskAction =
   | { type: 'toggle'; id: string }
   | { type: 'delete'; id: string }
   | { type: 'undo' }
+  | { type: 'restore'; id: string }
+  | { type: 'purge'; id: string }
 
 export function validateText(value: string): string | null {
   if (!value.trim()) return 'Укажите заголовок задачи.'
@@ -48,7 +51,10 @@ export function reduceTasks(state: TaskState, action: TaskAction): TaskState {
   switch (action.type) {
     case 'add': {
       if (validateText(action.title) || validateDescription(action.description)) return state
-      if (!isValidTaskId(action.id) || state.tasks.some((task) => task.id === action.id))
+      if (
+        !isValidTaskId(action.id) ||
+        [...state.tasks, ...state.trash].some((task) => task.id === action.id)
+      )
         return state
       return {
         ...state,
@@ -99,13 +105,33 @@ export function reduceTasks(state: TaskState, action: TaskAction): TaskState {
       const task = state.tasks[index]
       if (!task) return state
       return {
+        ...state,
         tasks: state.tasks.filter((item) => item.id !== action.id),
+        trash: [task, ...state.trash],
         deleted: {
           task,
           index,
           beforeId: state.tasks[index - 1]?.id ?? null,
           afterId: state.tasks[index + 1]?.id ?? null,
         },
+      }
+    }
+    case 'restore': {
+      const task = state.trash.find((item) => item.id === action.id)
+      if (!task) return state
+      return {
+        ...state,
+        tasks: [task, ...state.tasks],
+        trash: state.trash.filter((item) => item.id !== action.id),
+        deleted: state.deleted?.task.id === action.id ? null : state.deleted,
+      }
+    }
+    case 'purge': {
+      if (!state.trash.some((task) => task.id === action.id)) return state
+      return {
+        ...state,
+        trash: state.trash.filter((task) => task.id !== action.id),
+        deleted: state.deleted?.task.id === action.id ? null : state.deleted,
       }
     }
     case 'undo': {
@@ -119,7 +145,12 @@ export function reduceTasks(state: TaskState, action: TaskAction): TaskState {
         after >= 0 ? after : before >= 0 ? before + 1 : Math.min(index, state.tasks.length)
       const tasks = [...state.tasks]
       tasks.splice(position, 0, task)
-      return { tasks, deleted: null }
+      return {
+        ...state,
+        tasks,
+        trash: state.trash.filter((item) => item.id !== task.id),
+        deleted: null,
+      }
     }
   }
 }

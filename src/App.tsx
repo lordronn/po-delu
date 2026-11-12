@@ -5,6 +5,7 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import type { Task } from '@/domain/tasks'
 import { TaskComposer } from '@/components/task-composer'
 import { SortableTaskList } from '@/components/sortable-task-list'
+import { TaskTrash } from '@/components/task-trash'
 import { TaskEditor } from '@/components/task-editor'
 import { STORAGE_KEY, type StorageBackend } from '@/data/storage'
 import type { TaskStore } from '@/app/task-store'
@@ -18,7 +19,7 @@ const storageMessages = {
   outdated: {
     title: 'В другой вкладке открыта старая версия',
     description:
-      'Она записала список без описаний. Ваш текущий список оставлен здесь, чтобы не потерять детали. Обновите остальные вкладки, затем сохраните этот список. При обновлении текущей страницы несохранённые детали потеряются.',
+      'Она записала список в старом формате. Текущий список и корзина оставлены здесь, чтобы не потерять данные. Обновите остальные вкладки, затем сохраните этот список. При обновлении текущей страницы несохранённые изменения потеряются.',
     button: 'Сохранить текущий список',
   },
   corrupt: {
@@ -43,7 +44,7 @@ const storageMessages = {
 
 export default function App({ store, backend }: AppProps) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
-  const { tasks, deleted, persistence } = snapshot
+  const { tasks, trash, deleted, persistence } = snapshot
   const [editing, setEditing] = useState<Task | null>(null)
   const [dragNotice, setDragNotice] = useState<string | null>(null)
   const pendingFocus = useRef<string | null>(null)
@@ -57,6 +58,7 @@ export default function App({ store, backend }: AppProps) {
       const active = document.activeElement
       const focusedUndo = !!active?.closest('.undo-panel')
       const focusedRecovery = !!active?.closest('.storage-alert')
+      const focusedTrash = active?.closest('[data-trash-id]')?.getAttribute('data-trash-id')
       const focusedRow = active?.closest('[data-task-id]')?.getAttribute('data-task-id')
       store.receive(event.newValue)
       const next = store.getSnapshot()
@@ -66,6 +68,8 @@ export default function App({ store, backend }: AppProps) {
         (focusedRecovery && next.persistence === 'saved')
       )
         pendingFocus.current = 'new-task'
+      if (focusedTrash && !next.trash.some((task) => task.id === focusedTrash))
+        pendingFocus.current = 'trash-toggle'
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
@@ -100,6 +104,25 @@ export default function App({ store, backend }: AppProps) {
   function undoDelete() {
     pendingFocus.current = deleted ? `task-${deleted.task.id}` : 'new-task'
     store.dispatch({ type: 'undo' })
+  }
+
+  function restoreTask(id: string) {
+    if (!store.getSnapshot().trash.some((task) => task.id === id)) return
+    pendingFocus.current = `task-${id}`
+    store.dispatch({ type: 'restore', id })
+  }
+
+  function purgeTask(task: Task) {
+    if (
+      !window.confirm(`Удалить задачу «${task.title}» окончательно? Восстановить её будет нельзя.`)
+    )
+      return
+    const current = store.getSnapshot().trash
+    const index = current.findIndex((item) => item.id === task.id)
+    if (index < 0) return
+    const neighbor = current[index + 1] ?? current[index - 1]
+    pendingFocus.current = neighbor ? `restore-${neighbor.id}` : 'trash-toggle'
+    store.dispatch({ type: 'purge', id: task.id })
   }
 
   function moveTask(id: string, overId: string, expected?: readonly Task[]) {
@@ -224,6 +247,8 @@ export default function App({ store, backend }: AppProps) {
               </div>
             )}
           </section>
+
+          <TaskTrash tasks={trash} onRestore={restoreTask} onPurge={purgeTask} />
 
           <div className="card-footer">
             <CheckCheck size={14} aria-hidden="true" />

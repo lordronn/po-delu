@@ -13,7 +13,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('storage boundary', () => {
   it('treats missing data as an empty list', () => {
-    expect(decodeTasks(null)).toEqual({ status: 'saved', tasks: [], version: null })
+    expect(decodeTasks(null)).toEqual({ status: 'saved', tasks: [], trash: [], version: null })
   })
 
   it('ignores unknown fields and trims both text fields while preserving newlines', () => {
@@ -32,7 +32,7 @@ describe('storage boundary', () => {
           ],
         }),
       ),
-    ).toEqual({ status: 'saved', tasks: [task], version: 2 })
+    ).toEqual({ status: 'saved', tasks: [task], trash: [], version: 2 })
   })
 
   it('migrates v1 text to title in memory, retaining ids, completion and order', () => {
@@ -47,6 +47,7 @@ describe('storage boundary', () => {
     expect(createRepository(backend).read()).toEqual({
       status: 'saved',
       version: 1,
+      trash: [],
       tasks: [
         { id: 'a', title: 'Раньше', description: '', done: true },
         { id: 'b', title: 'Второе', description: '', done: false },
@@ -86,10 +87,10 @@ describe('storage boundary', () => {
     JSON.stringify({ version: 1, tasks: [{ id: 'a', text: '', done: true }] }),
     JSON.stringify({ version: 1, tasks: [{ id: 'a', title: 'Wrong schema', done: true }] }),
   ])('rejects malformed or unsupported records: %s', (raw) => {
-    expect(decodeTasks(raw)).toEqual({ status: 'corrupt', tasks: [] })
+    expect(decodeTasks(raw)).toEqual({ status: 'corrupt', tasks: [], trash: [] })
   })
 
-  it('round-trips v2 through the same stable key', () => {
+  it('round-trips the current schema through the same stable key', () => {
     const values = new Map<string, string>()
     const repository = createRepository({
       getItem: (key) => values.get(key) ?? null,
@@ -99,7 +100,7 @@ describe('storage boundary', () => {
     })
     expect(repository.save([task])).toBe(true)
     expect(JSON.parse(values.get(STORAGE_KEY)!).version).toBe(SCHEMA_VERSION)
-    expect(repository.read()).toEqual({ status: 'saved', tasks: [task], version: 2 })
+    expect(repository.read()).toEqual({ status: 'saved', tasks: [task], trash: [], version: 3 })
   })
 
   it('allows empty descriptions and exact size boundaries', () => {
@@ -140,4 +141,14 @@ describe('storage boundary', () => {
     vi.stubGlobal('window', { localStorage: backend })
     expect(getBrowserStorage()).toBe(backend)
   })
+})
+
+it('round-trips trash and rejects corrupt or duplicate tasks across both lists', () => {
+  const deleted = { ...task, id: 'deleted', done: true }
+  const raw = JSON.stringify({ version: 3, tasks: [task], trash: [deleted] })
+  expect(decodeTasks(raw)).toEqual({ status: 'saved', tasks: [task], trash: [deleted], version: 3 })
+  for (const trash of [null, {}, [task], [{ ...deleted, description: null }], [deleted, deleted]]) {
+    expect(decodeTasks(JSON.stringify({ version: 3, tasks: [task], trash })).status).toBe('corrupt')
+  }
+  expect(decodeTasks(JSON.stringify({ version: 4, tasks: [], trash: [] })).status).toBe('corrupt')
 })

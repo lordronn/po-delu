@@ -130,7 +130,10 @@ export function TaskEditor({ initial, current, onSave, onClose }: Props) {
             }}
             maxLength={MAX_DESCRIPTION_LENGTH}
             rows={5}
-            aria-describedby="edit-hint"
+            aria-invalid={!!error && !!validateDescription(description)}
+            aria-describedby={
+              error && validateDescription(description) ? 'edit-error' : 'edit-hint'
+            }
           />
           <p id="edit-hint" className="input-hint">
             Заголовок — до {MAX_TASK_LENGTH}, описание — до {MAX_DESCRIPTION_LENGTH} символов.

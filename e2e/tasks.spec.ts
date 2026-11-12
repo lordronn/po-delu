@@ -37,6 +37,7 @@ async function keyboardMove(
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
+  await expect(page.getByRole('status').filter({ hasText: 'Перенос начат.' })).toHaveCount(1)
   const destination = (
     await page.locator('.task-list > .task-item:not([inert]) .task-label').allTextContents()
   ).indexOf(target)
@@ -136,6 +137,8 @@ test('keyboard flow preserves focus on toggle, delete and undo', async ({ page, 
   await expect(page.getByRole('button', { name: 'Добавить задачу', exact: true })).toBeFocused()
   await page.keyboard.press(tab)
   await expect(page.getByRole('button', { name: 'Добавить детали', exact: true })).toBeFocused()
+  await page.keyboard.press(tab)
+  await expect(page.getByRole('button', { name: /^Корзина/ })).toBeFocused()
   await page.keyboard.press(tab)
   await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toBeFocused()
   await page.keyboard.press('Enter')
@@ -492,6 +495,7 @@ test('pointer drag reorders by the handle, persists and does not toggle or expan
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
+  await expect(page.getByRole('status').filter({ hasText: 'Перенос начат.' })).toHaveCount(1)
   const to = await page.locator('.task-list > .task-item:not([inert])').last().boundingBox()
   if (!to) throw new Error('Drop target must be rendered')
   await page.mouse.move(from.x + from.width / 2, to.y + to.height / 2, { steps: 12 })
@@ -539,6 +543,7 @@ test('keyboard drag supports reorder and Escape cancellation', async ({ page }) 
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
+  await expect(page.getByRole('status').filter({ hasText: 'Перенос начат.' })).toHaveCount(1)
   await page.keyboard.press('ArrowDown')
   await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
     'Второе',
@@ -556,6 +561,7 @@ test('keyboard drag supports reorder and Escape cancellation', async ({ page }) 
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
+  await expect(page.getByRole('status').filter({ hasText: 'Перенос начат.' })).toHaveCount(1)
   await page.keyboard.press('ArrowUp')
   await page.keyboard.press('Escape')
   await expect(page.locator('.task-label')).toHaveText(['Второе', 'Третье', 'Первое'])
@@ -579,6 +585,7 @@ test('external updates during a drag cancel its commit instead of applying stale
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
+  await expect(page.getByRole('status').filter({ hasText: 'Перенос начат.' })).toHaveCount(1)
   await page.keyboard.press('ArrowDown')
   await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
     'Первое',
@@ -688,7 +695,7 @@ test('migrates existing tasks without a startup write and protects details from 
   await addTask(page, 'Новая задача', 'Новые детали')
   expect(
     JSON.parse((await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY))!).version,
-  ).toBe(2)
+  ).toBe(3)
   const other = await context.newPage()
   await other.goto('/')
   await other.evaluate(({ key, raw }) => localStorage.setItem(key, raw), {
@@ -767,10 +774,13 @@ test('storage recovery with identical tasks does not invalidate an active drag',
     .locator('.task-list')
     .evaluate((element) => element.scrollIntoView({ block: 'center' }))
   await page.getByRole('button', { name: 'Переместить: Второе', exact: true }).focus()
+  const scrollBeforeDrag = await page.evaluate(() => scrollY)
   await page.keyboard.press('Space')
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
+  await expect(page.getByRole('status').filter({ hasText: 'Перенос начат.' })).toHaveCount(1)
+  expect(Math.abs((await page.evaluate(() => scrollY)) - scrollBeforeDrag)).toBeLessThanOrEqual(1)
   await page.keyboard.press('ArrowUp')
   await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
     'Второе',
@@ -790,6 +800,7 @@ test('storage recovery with identical tasks does not invalidate an active drag',
     'Первое',
   ])
   await expect(page.locator('.drag-notice')).toHaveCount(0)
+  await expect(page.locator('.task-list')).not.toHaveAttribute('style', /min-height/)
   await page.reload()
   await expect(page.locator('.task-label')).toHaveText(['Второе', 'Первое'])
   await other.close()
@@ -1015,6 +1026,7 @@ test('touch drag by the handle reorders tasks and persists without completing th
     await expect(
       page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
     ).toHaveCount(1)
+    await expect(page.getByRole('status').filter({ hasText: 'Перенос начат.' })).toHaveCount(1)
     const target = await page.locator('.task-list > .task-item:not([inert])').last().boundingBox()
     if (!target) throw new Error('Touch drop target must be visible')
     const destination = target.y + target.height / 2
@@ -1087,6 +1099,7 @@ test('live preview rolls back without saving and supports consecutive cancel and
     await expect(
       page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
     ).toHaveCount(1)
+    await expect(page.getByRole('status').filter({ hasText: 'Перенос начат.' })).toHaveCount(1)
     await page.keyboard.press('ArrowDown')
     await expect(titles).toHaveText(['Второе', 'Третье', 'Первое'])
     expect(await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)).toBe(saved)
@@ -1099,6 +1112,7 @@ test('live preview rolls back without saving and supports consecutive cancel and
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
+  await expect(page.getByRole('status').filter({ hasText: 'Перенос начат.' })).toHaveCount(1)
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('ArrowDown')
   await expect(titles).toHaveText(['Второе', 'Первое', 'Третье'])
@@ -1127,6 +1141,7 @@ test('external deletion during live preview removes the task cleanly and allows 
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
   ).toHaveCount(1)
+  await expect(page.getByRole('status').filter({ hasText: 'Перенос начат.' })).toHaveCount(1)
   await page.keyboard.press('ArrowDown')
   await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
     'Второе',
@@ -1223,4 +1238,116 @@ test('completion respects reduced motion while preserving its order and keyboard
   await page.getByRole('checkbox', { name: /Первое/ }).press('Space')
   await expect(page.locator('.task-label')).toHaveText(['Второе', 'Первое'])
   await expect(page.getByRole('checkbox', { checked: true })).toHaveCount(2)
+})
+
+test('trash survives reload, preserves details and done state, restores and confirms permanent deletion', async ({
+  page,
+}) => {
+  await addTask(page, 'Сохранить в корзине', 'Детали удалённой задачи.\nВторая строка.')
+  await page.getByRole('checkbox', { name: /Сохранить в корзине/ }).check()
+  await deleteTask(page, 'Сохранить в корзине')
+  await addTask(page, 'Ещё одна удалённая')
+  await deleteTask(page, 'Ещё одна удалённая')
+  await page.reload()
+  await expect(page.getByRole('checkbox')).toHaveCount(0)
+  await page.getByRole('button', { name: /^Корзина/ }).click()
+  await expect(page.locator('.trash-item')).toHaveCount(2)
+  for (const button of await page.locator('.trash-actions button').all()) {
+    const bounds = (await button.boundingBox())!
+    expect(bounds.height).toBeGreaterThanOrEqual(44)
+    expect(bounds.x).toBeGreaterThanOrEqual(0)
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+  }
+  await page.locator('.trash-details summary').click()
+  await expect(page.locator('.trash-details .task-description')).toHaveText(
+    'Детали удалённой задачи.\nВторая строка.',
+  )
+  await audit(page)
+  await page.getByRole('button', { name: 'Восстановить: Сохранить в корзине', exact: true }).click()
+  const checkbox = page.getByRole('checkbox', { name: /Сохранить в корзине/ })
+  await expect(checkbox).toBeChecked()
+  await expect(checkbox).toBeFocused()
+  await page.reload()
+  await expect(checkbox).toBeChecked()
+  await page.getByRole('button', { name: /^Корзина/ }).click()
+  const purge = page.getByRole('button', {
+    name: 'Удалить навсегда: Ещё одна удалённая',
+    exact: true,
+  })
+  page.once('dialog', (dialog) => dialog.dismiss())
+  await purge.click()
+  await expect(purge).toBeVisible()
+  page.once('dialog', (dialog) => dialog.accept())
+  await purge.click()
+  await expect(page.locator('.trash-item')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Корзина/ })).toBeFocused()
+  await page.reload()
+  await page.getByRole('button', { name: /^Корзина/ }).click()
+  await expect(page.getByText('Корзина пуста.', { exact: true })).toBeVisible()
+  await expect(checkbox).toBeChecked()
+})
+
+test('trash synchronizes across tabs and external restore returns focus to its heading', async ({
+  page,
+  context,
+}) => {
+  await addTask(page, 'Между вкладками', 'Описание должно сохраниться.')
+  const other = await context.newPage()
+  await other.goto('/')
+  await deleteTask(page, 'Между вкладками')
+  await other.getByRole('button', { name: /^Корзина/ }).click()
+  await expect(
+    other.getByRole('button', { name: 'Восстановить: Между вкладками', exact: true }),
+  ).toBeVisible()
+  await page.getByRole('button', { name: /^Корзина/ }).click()
+  await page.getByRole('button', { name: 'Удалить навсегда: Между вкладками', exact: true }).focus()
+  await other.getByRole('button', { name: 'Восстановить: Между вкладками', exact: true }).click()
+  await expect(page.getByRole('checkbox', { name: /Между вкладками/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Корзина/ })).toBeFocused()
+  await expect(page.locator('.trash-item')).toHaveCount(0)
+  await deleteTask(other, 'Между вкладками')
+  await expect(page.locator('.trash-item')).toHaveCount(1)
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: 'Удалить навсегда: Между вкладками', exact: true }).click()
+  await other.reload()
+  await other.getByRole('button', { name: /^Корзина/ }).click()
+  await expect(other.locator('.trash-item')).toHaveCount(0)
+  await other.close()
+})
+
+test('editor stays light with comfortable fields in both system color schemes', async ({
+  page,
+}) => {
+  await addTask(page, 'Проверить фон редактора', 'Белое поле описания.')
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme })
+    await page
+      .getByRole('button', { name: 'Изменить: Проверить фон редактора', exact: true })
+      .click()
+    for (const field of ['#edit-title', '#edit-description']) {
+      await expect(page.locator(field)).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+      expect((await page.locator(field).boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    }
+    await audit(page)
+    await page.getByRole('button', { name: 'Отмена', exact: true }).click()
+  }
+  await page.getByRole('button', { name: /^Корзина/ }).click()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+test('keyboard drag immediately after completion uses the final task positions', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await addTask(page, 'Первое')
+  await addTask(page, 'Второе')
+  await page.getByRole('checkbox', { name: /Второе/ }).check()
+  await keyboardMove(page, 'Второе', 'ArrowUp', 'Первое')
+  await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+    'Второе',
+    'Первое',
+  ])
+  await page.reload()
+  await expect(page.locator('.task-label')).toHaveText(['Второе', 'Первое'])
+  await expect(page.getByRole('checkbox', { name: /Второе/ })).toBeChecked()
 })

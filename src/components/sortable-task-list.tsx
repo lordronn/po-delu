@@ -26,7 +26,8 @@ function TaskRow({
   onDelete,
   onEdit,
   activeId,
-}: Props & { task: Task; index: number; activeId: string | null }) {
+  onPrepareDrag,
+}: Props & { task: Task; index: number; activeId: string | null; onPrepareDrag: () => void }) {
   const [open, setOpen] = useState(false)
   const hasDescription = !!task.description
   const expanded = open && hasDescription
@@ -55,6 +56,10 @@ function TaskRow({
           {/* Keep a stable sensor target so dnd-kit never annotates the entire row as a button. */}
           <Button
             ref={handleRef}
+            onPointerDownCapture={onPrepareDrag}
+            onKeyDownCapture={(event) => {
+              if (event.key === ' ' || event.key === 'Enter') onPrepareDrag()
+            }}
             id={`drag-${task.id}`}
             variant="ghost"
             size="icon"
@@ -191,8 +196,15 @@ export function SortableTaskList(props: Props) {
           },
         }),
       ]}
-      onDragStart={(event) => {
+      // Capture handlers also run before the keyboard sensor reads its initial coordinates.
+      onBeforeDragStart={() => {
         cancelAnimations()
+        const list = listRef.current
+        // Feedback briefly removes the source from flow before inserting its placeholder.
+        // Reserve space so a near-bottom viewport cannot clamp its scroll position.
+        if (list) list.style.minHeight = `${list.getBoundingClientRect().height}px`
+      }}
+      onDragStart={(event) => {
         const activeId = String(event.operation.source?.id ?? '')
         drag.current = { base: props.tasks, tasks: props.tasks, revision: 0, activeId }
         setPreview({ base: props.tasks, tasks: props.tasks, activeId })
@@ -231,6 +243,10 @@ export function SortableTaskList(props: Props) {
         drag.current = null
         manager.collisionObserver.enable()
         setPreview(null)
+        const list = listRef.current
+        void manager.renderer.rendering.then(() => {
+          if (!drag.current && list === listRef.current) list?.style.removeProperty('min-height')
+        })
         if (!expected) return
         if (expected !== props.tasks) {
           props.onMove(String(source?.id ?? ''), String(target?.id ?? ''), expected)
@@ -254,6 +270,7 @@ export function SortableTaskList(props: Props) {
             index={index}
             activeId={preview?.base === props.tasks ? preview.activeId : null}
             onToggle={toggleTask}
+            onPrepareDrag={cancelAnimations}
             onDelete={(deleted) =>
               props.onDelete(
                 deleted,

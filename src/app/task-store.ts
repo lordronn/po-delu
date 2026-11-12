@@ -1,5 +1,5 @@
-import { reduceTasks, type TaskAction, type TaskState } from '../domain/tasks'
-import { createRepository, decodeTasks, type StorageBackend } from '../data/storage'
+import { reduceTasks, type TaskAction, type TaskState, type Task } from '../domain/tasks'
+import { createRepository, decodeTasks, SCHEMA_VERSION, type StorageBackend } from '../data/storage'
 
 export interface Snapshot extends TaskState {
   readonly persistence: 'saved' | 'corrupt' | 'memory' | 'conflict' | 'outdated'
@@ -14,6 +14,7 @@ export function createTaskStore(backend: StorageBackend | null) {
   const initial = repository.read()
   let snapshot: Snapshot = {
     tasks: initial.tasks,
+    trash: initial.trash,
     deleted: null,
     persistence: initial.status,
     announcement: '',
@@ -21,7 +22,7 @@ export function createTaskStore(backend: StorageBackend | null) {
   }
   const listeners = new Set<() => void>()
   let hasUnsavedChanges = false
-  let hasSeenV2 = initial.status === 'saved' && initial.version === 2
+  let highestVersion = initial.status === 'saved' ? (initial.version ?? 0) : 0
 
   function publish(next: Omit<Snapshot, 'revision'>) {
     snapshot = { ...next, revision: snapshot.revision + 1 }
@@ -44,29 +45,31 @@ export function createTaskStore(backend: StorageBackend | null) {
         snapshot.persistence === 'conflict' ||
         snapshot.persistence === 'outdated'
           ? snapshot.persistence
-          : repository.save(next.tasks)
+          : repository.save(next.tasks, next.trash)
             ? 'saved'
             : 'memory'
       const announcement =
         action.type === 'add'
           ? 'Задача добавлена.'
-          : action.type === 'delete'
-            ? 'Задача удалена. Можно отменить удаление.'
-            : action.type === 'undo'
-              ? 'Задача восстановлена.'
-              : action.type === 'update'
-                ? 'Задача изменена.'
-                : action.type === 'move'
-                  ? `Задача перемещена на позицию ${next.tasks.findIndex((task) => task.id === action.id) + 1} из ${next.tasks.length}.`
-                  : next.tasks.find((task) => task.id === action.id)?.done
-                    ? snapshot.tasks.at(-1)?.id === action.id
-                      ? 'Задача выполнена.'
-                      : 'Задача выполнена и перемещена в конец списка.'
-                    : snapshot.tasks[0]?.id === action.id
-                      ? 'Задача возвращена в работу.'
-                      : 'Задача возвращена в работу и перемещена в начало списка.'
+          : action.type === 'purge'
+            ? 'Задача удалена окончательно.'
+            : action.type === 'delete'
+              ? 'Задача удалена. Можно отменить удаление.'
+              : action.type === 'undo' || action.type === 'restore'
+                ? 'Задача восстановлена.'
+                : action.type === 'update'
+                  ? 'Задача изменена.'
+                  : action.type === 'move'
+                    ? `Задача перемещена на позицию ${next.tasks.findIndex((task) => task.id === action.id) + 1} из ${next.tasks.length}.`
+                    : next.tasks.find((task) => task.id === action.id)?.done
+                      ? snapshot.tasks.at(-1)?.id === action.id
+                        ? 'Задача выполнена.'
+                        : 'Задача выполнена и перемещена в конец списка.'
+                      : snapshot.tasks[0]?.id === action.id
+                        ? 'Задача возвращена в работу.'
+                        : 'Задача возвращена в работу и перемещена в начало списка.'
       hasUnsavedChanges = persistence !== 'saved'
-      if (!hasUnsavedChanges) hasSeenV2 = true
+      if (!hasUnsavedChanges) highestVersion = SCHEMA_VERSION
       publish({ ...next, persistence, announcement })
     },
     receive(raw: string | null) {
@@ -80,7 +83,7 @@ export function createTaskStore(backend: StorageBackend | null) {
         })
         return
       }
-      if (hasSeenV2 && external.version === 1) {
+      if (external.version !== null && external.version < highestVersion) {
         hasUnsavedChanges = true
         publish({
           ...snapshot,
@@ -91,18 +94,10 @@ export function createTaskStore(backend: StorageBackend | null) {
         })
         return
       }
-      if (external.version === 2) hasSeenV2 = true
-      const matches =
-        external.tasks.length === snapshot.tasks.length &&
-        external.tasks.every((task, index) => {
-          const local = snapshot.tasks[index]
-          return (
-            local?.id === task.id &&
-            local.title === task.title &&
-            local.description === task.description &&
-            local.done === task.done
-          )
-        })
+      highestVersion = Math.max(highestVersion, external.version ?? 0)
+      const sameTasks = equalTasks(external.tasks, snapshot.tasks)
+      const sameTrash = equalTasks(external.trash, snapshot.trash)
+      const matches = sameTasks && sameTrash
       if (hasUnsavedChanges && !matches) {
         publish({
           ...snapshot,
@@ -115,16 +110,17 @@ export function createTaskStore(backend: StorageBackend | null) {
       hasUnsavedChanges = false
       if (matches && snapshot.persistence === 'saved') return
       publish({
-        tasks: matches ? snapshot.tasks : external.tasks,
+        tasks: sameTasks ? snapshot.tasks : external.tasks,
+        trash: sameTrash ? snapshot.trash : external.trash,
         deleted: null,
         persistence: 'saved',
         announcement: 'Список обновлён в другой вкладке.',
       })
     },
     recover() {
-      const saved = repository.save(snapshot.tasks)
+      const saved = repository.save(snapshot.tasks, snapshot.trash)
       hasUnsavedChanges = !saved
-      if (saved) hasSeenV2 = true
+      if (saved) highestVersion = SCHEMA_VERSION
       publish({
         ...snapshot,
         persistence: saved ? 'saved' : 'memory',
@@ -135,3 +131,18 @@ export function createTaskStore(backend: StorageBackend | null) {
 }
 
 export type TaskStore = ReturnType<typeof createTaskStore>
+
+function equalTasks(first: readonly Task[], second: readonly Task[]): boolean {
+  return (
+    first.length === second.length &&
+    first.every((task, index) => {
+      const other = second[index]
+      return (
+        other?.id === task.id &&
+        other.title === task.title &&
+        other.description === task.description &&
+        other.done === task.done
+      )
+    })
+  )
+}

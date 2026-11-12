@@ -109,7 +109,8 @@ describe('task store', () => {
     expect(storage.writes()).toBe(2)
     store.receive(
       JSON.stringify({
-        version: 2,
+        version: 3,
+        trash: [],
         tasks: [{ id: 'c', title: 'External', description: '', done: true }],
       }),
     )
@@ -126,7 +127,8 @@ describe('task store', () => {
     storage.fail(true)
     store.dispatch({ type: 'add', id: 'local', title: 'Unsaved', description: '' })
     const external = JSON.stringify({
-      version: 2,
+      version: 3,
+      trash: [],
       tasks: [{ id: 'remote', title: 'Remote', description: '', done: false }],
     })
     store.receive(external)
@@ -147,7 +149,8 @@ describe('task store', () => {
 
   it('protects an unsaved deletion even when the local list is empty', () => {
     const original = JSON.stringify({
-      version: 2,
+      version: 3,
+      trash: [],
       tasks: [{ id: 'a', title: 'Task', description: '', done: false }],
     })
     const storage = fakeStorage(original)
@@ -183,7 +186,8 @@ describe('task store', () => {
     const unsavedTasks = store.getSnapshot().tasks
     store.receive(
       JSON.stringify({
-        version: 2,
+        version: 3,
+        trash: [],
         tasks: [{ id: 'a', title: 'Task', description: '', done: true }],
       }),
     )
@@ -193,8 +197,8 @@ describe('task store', () => {
   })
 })
 
-describe('v2 persistence and concurrent schema versions', () => {
-  it('does not write migration at startup; first edit writes v2 and move persists order', () => {
+describe('current persistence and concurrent schema versions', () => {
+  it('does not write migration at startup; first edit writes the current schema and move persists order', () => {
     const original = JSON.stringify({
       version: 1,
       tasks: [
@@ -212,7 +216,7 @@ describe('v2 persistence and concurrent schema versions', () => {
       title: 'Updated',
       description: 'Details\nSecond line',
     })
-    expect(JSON.parse(storage.raw()!).version).toBe(2)
+    expect(JSON.parse(storage.raw()!).version).toBe(3)
     expect(createTaskStore(storage.backend).getSnapshot().tasks[0]).toEqual({
       id: 'a',
       title: 'Updated',
@@ -234,7 +238,8 @@ describe('v2 persistence and concurrent schema versions', () => {
   it('protects v2 descriptions if an already-open v1 tab writes its old schema', () => {
     const storage = fakeStorage(
       JSON.stringify({
-        version: 2,
+        version: 3,
+        trash: [],
         tasks: [{ id: 'a', title: 'Title', description: 'Must survive', done: true }],
       }),
     )
@@ -260,7 +265,8 @@ describe('v2 persistence and concurrent schema versions', () => {
     expect(store.getSnapshot().persistence).toBe('saved')
     store.receive(
       JSON.stringify({
-        version: 2,
+        version: 3,
+        trash: [],
         tasks: [{ id: 'a', title: 'Legacy', description: 'Details', done: true }],
       }),
     )
@@ -274,7 +280,8 @@ describe('v2 persistence and concurrent schema versions', () => {
     store.dispatch({ type: 'add', id: 'a', title: 'Task', description: '' })
     store.receive(
       JSON.stringify({
-        version: 2,
+        version: 3,
+        trash: [],
         tasks: [{ id: 'a', title: 'Task', description: 'New description', done: false }],
       }),
     )
@@ -298,4 +305,58 @@ it('persists automatic completion order and reopening at the top', () => {
   restored = createTaskStore(storage.backend)
   expect(restored.getSnapshot().tasks.map((task) => task.id)).toEqual(['c', 'b', 'a'])
   expect(restored.getSnapshot().tasks[0]?.done).toBe(false)
+})
+
+it('persists trash across reload, restores full data and never resurrects a permanent deletion', () => {
+  const storage = fakeStorage()
+  let store = createTaskStore(storage.backend)
+  store.dispatch({ type: 'add', id: 'a', title: 'First', description: 'Details' })
+  store.dispatch({ type: 'toggle', id: 'a' })
+  store.dispatch({ type: 'delete', id: 'a' })
+  store = createTaskStore(storage.backend)
+  expect(store.getSnapshot().deleted).toBeNull()
+  expect(store.getSnapshot().trash).toEqual([
+    { id: 'a', title: 'First', description: 'Details', done: true },
+  ])
+  store.dispatch({ type: 'restore', id: 'a' })
+  expect(createTaskStore(storage.backend).getSnapshot().tasks[0]?.done).toBe(true)
+  store.dispatch({ type: 'delete', id: 'a' })
+  store.dispatch({ type: 'purge', id: 'a' })
+  expect(store.getSnapshot().announcement).toBe('Задача удалена окончательно.')
+  store = createTaskStore(storage.backend)
+  expect(store.getSnapshot().tasks).toEqual([])
+  expect(store.getSnapshot().trash).toEqual([])
+})
+
+it('migrates v2 without startup writes and protects trash from older clients', () => {
+  const old = JSON.stringify({
+    version: 2,
+    tasks: [{ id: 'a', title: 'Old', description: 'Details', done: false }],
+  })
+  const storage = fakeStorage(old)
+  const store = createTaskStore(storage.backend)
+  expect(storage.writes()).toBe(0)
+  expect(store.getSnapshot().trash).toEqual([])
+  store.dispatch({ type: 'delete', id: 'a' })
+  store.receive(old)
+  expect(store.getSnapshot().persistence).toBe('outdated')
+  expect(store.getSnapshot().trash[0]?.id).toBe('a')
+  store.recover()
+  expect(createTaskStore(storage.backend).getSnapshot().trash[0]?.id).toBe('a')
+})
+
+it('synchronizes trash-only updates without invalidating the active list reference', () => {
+  const storage = fakeStorage()
+  const store = createTaskStore(storage.backend)
+  store.dispatch({ type: 'add', id: 'a', title: 'Active', description: '' })
+  const tasks = store.getSnapshot().tasks
+  store.receive(
+    JSON.stringify({
+      version: 3,
+      tasks,
+      trash: [{ id: 'b', title: 'Deleted', description: '', done: false }],
+    }),
+  )
+  expect(store.getSnapshot().tasks).toBe(tasks)
+  expect(store.getSnapshot().trash[0]?.id).toBe('b')
 })

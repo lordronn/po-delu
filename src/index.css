@@ -31,6 +31,7 @@
   --radius-xl: 16px;
 }
 :root {
+  color-scheme: light;
   font-family: var(--font-sans);
   color: #252934;
   background: #fafaf9;
@@ -69,6 +70,7 @@ textarea:focus-visible {
 }
 ::selection {
   background: #dce3ff;
+  color: #252934;
 }
 .app-shell {
   min-height: 100svh;
@@ -520,6 +522,14 @@ textarea:focus-visible {
 .task-editor [data-slot='dialog-title'] {
   padding-right: 24px;
 }
+.task-editor input {
+  min-height: 44px;
+  background: #fff;
+}
+.task-editor input:focus-visible,
+.task-editor textarea:focus-visible {
+  outline: none;
+}
 .task-editor textarea {
   resize: vertical;
   min-height: 100px;
@@ -603,4 +613,100 @@ textarea:focus-visible {
 .delete-button:hover {
   color: #b42332;
   background: #fff0f1;
+}
+
+.trash-section {
+  margin-top: 24px;
+  border-top: 1px solid #e3e6ed;
+  padding-top: 8px;
+}
+.trash-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  width: 100%;
+  border-radius: 8px;
+  color: #59657b;
+  font-size: 13px;
+  text-align: left;
+}
+.trash-toggle > .task-chevron {
+  margin-left: auto;
+}
+.trash-toggle[aria-expanded='true'] > .task-chevron {
+  transform: rotate(180deg);
+}
+.trash-count {
+  color: #626b7b;
+}
+.trash-hint,
+.trash-empty {
+  color: #626b7b;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 8px 0 12px;
+}
+.trash-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.trash-item {
+  padding: 12px 0;
+  border-bottom: 1px solid #e3e6ed;
+}
+.trash-item:last-child {
+  border-bottom: 0;
+}
+.trash-title {
+  margin: 0;
+}
+.trash-details summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  min-height: 44px;
+  border-radius: 6px;
+}
+.trash-details summary::-webkit-details-marker {
+  display: none;
+}
+.trash-details summary > svg {
+  flex-shrink: 0;
+  color: #717c90;
+}
+.trash-details[open] summary > svg {
+  transform: rotate(180deg);
+}
+.trash-details .task-description {
+  margin: 8px 0;
+}
+.trash-status {
+  display: block;
+  margin-top: 4px;
+  color: #626b7b;
+  font-size: 11px;
+}
+.trash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 8px;
+}
+.trash-actions button {
+  min-height: 44px;
+  font-size: 12px;
+}
+.purge-button {
+  color: #b42332;
+}
+.purge-button:hover {
+  color: #b42332;
+  background: #fff0f1;
+}
+.trash-details summary:focus-visible {
+  outline: 3px solid #536de0;
+  outline-offset: 3px;
 }

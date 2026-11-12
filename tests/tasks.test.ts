@@ -8,13 +8,14 @@ import {
   type TaskState,
 } from '../src/domain/tasks'
 
-const empty: TaskState = { tasks: [], deleted: null }
+const empty: TaskState = { tasks: [], trash: [], deleted: null }
 const populated: TaskState = {
   tasks: [
     { id: 'a', title: 'Первое', description: '', done: false },
     { id: 'b', title: 'Второе', description: '', done: true },
     { id: 'c', title: 'Третье', description: '', done: false },
   ],
+  trash: [],
   deleted: null,
 }
 
@@ -95,17 +96,18 @@ describe('task transitions', () => {
     const task = { id: 'x', title: 'Task', description: '', done: false }
     expect(
       reduceTasks(
-        { tasks: [], deleted: { task, index: 20, beforeId: null, afterId: null } },
+        { tasks: [], trash: [], deleted: { task, index: 20, beforeId: null, afterId: null } },
         { type: 'undo' },
       ).tasks,
     ).toEqual([task])
     expect(
       reduceTasks(
-        { tasks: [task], deleted: { task, index: 0, beforeId: null, afterId: null } },
+        { tasks: [task], trash: [], deleted: { task, index: 0, beforeId: null, afterId: null } },
         { type: 'undo' },
       ),
     ).toEqual({
       tasks: [task],
+      trash: [],
       deleted: null,
     })
   })
@@ -189,6 +191,7 @@ describe('task transitions', () => {
 it('moves only the toggled task and keeps the relative order and references of all others', () => {
   const initial = {
     tasks: populated.tasks.map((task) => ({ ...task, done: false })),
+    trash: [],
     deleted: null,
   }
   const first = reduceTasks(initial, { type: 'toggle', id: 'a' })
@@ -210,4 +213,29 @@ it('restores a deletion against surviving neighbors after a completion reorder',
   expect(restored.tasks[0]?.done).toBe(true)
   expect(restored.tasks[2]?.done).toBe(true)
   expect(restored.deleted).toBeNull()
+})
+
+it('keeps every deletion in trash, restores independently and permanently removes only trash', () => {
+  let state = reduceTasks(populated, { type: 'delete', id: 'a' })
+  state = reduceTasks(state, { type: 'delete', id: 'b' })
+  expect(state.trash.map((task) => task.id)).toEqual(['b', 'a'])
+  expect(reduceTasks(state, { type: 'purge', id: 'c' })).toBe(state)
+  expect(reduceTasks(state, { type: 'restore', id: 'missing' })).toBe(state)
+  expect(reduceTasks(state, { type: 'purge', id: 'missing' })).toBe(state)
+  expect(reduceTasks(state, { type: 'add', id: 'a', title: 'Duplicate', description: '' })).toBe(
+    state,
+  )
+  const restored = reduceTasks(state, { type: 'restore', id: 'a' })
+  expect(restored.tasks[0]).toBe(populated.tasks[0])
+  expect(restored.deleted?.task.id).toBe('b')
+  expect(restored.trash.map((task) => task.id)).toEqual(['b'])
+  const undone = reduceTasks(restored, { type: 'undo' })
+  expect(undone.trash).toEqual([])
+  expect(undone.tasks.find((task) => task.id === 'b')?.done).toBe(true)
+  expect(reduceTasks(state, { type: 'purge', id: 'b' }).deleted).toBeNull()
+  const purged = reduceTasks(state, { type: 'purge', id: 'a' })
+  expect(purged.deleted?.task.id).toBe('b')
+  expect(purged.trash.map((task) => task.id)).toEqual(['b'])
+  expect(reduceTasks(state, { type: 'restore', id: 'b' }).deleted).toBeNull()
+  expect(populated.trash).toEqual([])
 })
