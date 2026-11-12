@@ -81,7 +81,9 @@ export function TaskEditor({ initial, current, onSave, onClose }: Props) {
         onCloseAutoFocus={(event) => {
           event.preventDefault()
           ;(
-            document.getElementById(`details-${initial.id}`) ?? document.getElementById('new-task')
+            document.getElementById(`edit-${initial.id}`) ??
+            document.getElementById(`delete-${initial.id}`) ??
+            document.getElementById('new-task')
           )?.focus()
         }}
       >

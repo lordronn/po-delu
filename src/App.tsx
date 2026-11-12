@@ -1,16 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import {
-  ArrowRight,
-  Check,
-  CheckCheck,
-  ListTodo,
-  LockKeyhole,
-  RotateCcw,
-  ShieldCheck,
-  TriangleAlert,
-} from 'lucide-react'
+import { Check, CheckCheck, ListTodo, RotateCcw, ArrowUpDown, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import type { Task } from '@/domain/tasks'
 import { TaskComposer } from '@/components/task-composer'
@@ -54,6 +44,7 @@ const storageMessages = {
 export default function App({ store, backend }: AppProps) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const { tasks, deleted, persistence } = snapshot
+  const [ordering, setOrdering] = useState(false)
   const [editing, setEditing] = useState<Task | null>(null)
   const [dragNotice, setDragNotice] = useState<string | null>(null)
   const pendingFocus = useRef<string | null>(null)
@@ -99,12 +90,7 @@ export default function App({ store, backend }: AppProps) {
     store.dispatch({ type: 'undo' })
   }
 
-  function moveTask(
-    id: string,
-    overId: string,
-    focus: 'drag' | 'buttons',
-    expected?: readonly Task[],
-  ) {
+  function moveTask(id: string, overId: string, expected?: readonly Task[]) {
     const current = store.getSnapshot().tasks
     if (expected && current !== expected) {
       setDragNotice('Список изменился во время переноса. Порядок не изменён — повторите перенос.')
@@ -117,7 +103,7 @@ export default function App({ store, backend }: AppProps) {
     )
       return
     setDragNotice(null)
-    pendingFocus.current = `${focus === 'drag' ? 'drag' : 'details'}-${id}`
+    pendingFocus.current = `drag-${id}`
     store.dispatch({ type: 'move', id, overId })
   }
 
@@ -171,20 +157,12 @@ export default function App({ store, backend }: AppProps) {
             по делу<span className="brand-dot">.</span>
           </span>
         </div>
-        <span className="header-note">
-          <LockKeyhole size={13} aria-hidden="true" /> Личное пространство
-        </span>
       </header>
 
       <main id="main" className="main-content" tabIndex={-1}>
         <section className="intro" aria-labelledby="page-title">
-          <div className="eyebrow">
-            <span aria-hidden="true" /> МЕНЬШЕ ШУМА, БОЛЬШЕ ДЕЛА
-          </div>
-          <h1 id="page-title">
-            Мои задачи<span className="title-dot">.</span>
-          </h1>
-          <p>Освободите голову. Запишите важное и двигайтесь в своём темпе.</p>
+          <h1 id="page-title">Мои задачи</h1>
+          <span className="remaining-count">Осталось: {remaining}</span>
         </section>
 
         {persistence !== 'saved' && (
@@ -200,7 +178,7 @@ export default function App({ store, backend }: AppProps) {
           </Alert>
         )}
 
-        <Card className="task-card">
+        <div className="task-workspace">
           <TaskComposer
             onAdd={(title, description) =>
               store.dispatch({ type: 'add', id: crypto.randomUUID(), title, description })
@@ -210,48 +188,41 @@ export default function App({ store, backend }: AppProps) {
           <section className="list-section" aria-labelledby="list-title">
             <div className="list-heading">
               <h2 id="list-title">
-                Ваш список <span className="count-badge">{tasks.length}</span>
+                Все задачи <span className="sr-only">{tasks.length}</span>
               </h2>
-              {tasks.length > 0 && (
-                <span className="list-summary">
-                  Осталось: {remaining}
-                  <span aria-hidden="true"> · </span>Готово: {done}
-                </span>
+              {(tasks.length > 1 || ordering) && (
+                <Button
+                  id="order-mode"
+                  variant="ghost"
+                  size="sm"
+                  className="order-button"
+                  aria-pressed={ordering}
+                  onClick={() => setOrdering((value) => !value)}
+                >
+                  {ordering ? (
+                    <Check size={15} aria-hidden="true" />
+                  ) : (
+                    <ArrowUpDown size={15} aria-hidden="true" />
+                  )}
+                  {ordering ? 'Готово' : 'Порядок'}
+                </Button>
               )}
             </div>
-            {tasks.length > 1 && (
-              <p className="sort-hint">
-                Меняйте порядок за ручку ⋮⋮ или кнопками в раскрытой задаче.
+            {ordering && (
+              <p className="sort-hint" role="status">
+                Перетаскивайте задачи за ручку. С клавиатуры: пробел, стрелки, Enter.
               </p>
             )}
             {tasks.length === 0 ? (
               <div className="empty-state">
-                <div className="empty-illustration" aria-hidden="true">
-                  <span className="empty-orbit orbit-one" />
-                  <span className="empty-orbit orbit-two" />
-                  <div className="empty-icon">
-                    <ListTodo size={32} strokeWidth={1.6} />
-                  </div>
-                  <span className="empty-check">
-                    <Check size={13} strokeWidth={3} />
-                  </span>
-                </div>
-                <h3>
-                  Большие планы начинаются
-                  <br />с маленькой задачи
-                </h3>
-                <p>
-                  Добавьте первое дело в поле выше.
-                  <br />
-                  Здесь будет чуть больше порядка.
-                </p>
-                <span className="empty-caption">
-                  <ArrowRight size={13} aria-hidden="true" /> Один шаг — уже начало
-                </span>
+                <ListTodo size={25} strokeWidth={1.5} aria-hidden="true" />
+                <h3>Пока нет задач</h3>
+                <p>Добавьте первое дело в поле выше.</p>
               </div>
             ) : (
               <SortableTaskList
                 tasks={tasks}
+                ordering={ordering}
                 onToggle={(id) => store.dispatch({ type: 'toggle', id })}
                 onDelete={removeTask}
                 onEdit={setEditing}
@@ -266,15 +237,14 @@ export default function App({ store, backend }: AppProps) {
           </section>
 
           <div className="card-footer">
-            <ShieldCheck size={14} aria-hidden="true" />
+            <CheckCheck size={14} aria-hidden="true" />
             <span>
               {persistence === 'saved'
-                ? 'Сохраняется автоматически в этом браузере'
+                ? 'Сохранено в этом браузере'
                 : 'Изменения хранятся только в памяти вкладки'}
             </span>
-            <span className="save-dot" data-saved={persistence === 'saved'} aria-hidden="true" />
           </div>
-        </Card>
+        </div>
 
         {deleted && (
           <div className="undo-panel">
@@ -303,18 +273,10 @@ export default function App({ store, backend }: AppProps) {
           />
         )}
 
-        <p className="below-card">Без гонки за продуктивностью. Просто по делу.</p>
         <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           <span key={snapshot.revision}>{snapshot.announcement}</span>
         </div>
       </main>
-
-      <footer className="site-footer">
-        <span>Маленький список. Спокойная голова.</span>
-        <span>
-          Данные остаются у вас <LockKeyhole size={12} aria-hidden="true" />
-        </span>
-      </footer>
     </div>
   )
 }

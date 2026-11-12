@@ -16,6 +16,36 @@ async function addTask(page: Page, text: string, description?: string) {
   await input(page).press('Enter')
 }
 
+async function deleteTask(page: Page, title?: string) {
+  await page
+    .getByRole('button', title ? { name: `Удалить: ${title}`, exact: true } : { name: /^Удалить:/ })
+    .click()
+}
+
+async function keyboardMove(
+  page: Page,
+  title: string,
+  key: 'ArrowUp' | 'ArrowDown',
+  target: string,
+) {
+  const order = page.getByRole('button', { name: 'Порядок', exact: true })
+  if (await order.count()) await order.click()
+  const handle = page.getByRole('button', { name: `Переместить: ${title}`, exact: true })
+  await handle.focus()
+  await page
+    .locator('.task-list')
+    .evaluate((element) => element.scrollIntoView({ block: 'center' }))
+  await handle.press('Space')
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
+  ).toHaveCount(1)
+  await page.keyboard.press(key)
+  await expect(
+    page.locator('.task-list > .task-item:not([inert])[data-over="true"] .task-label'),
+  ).toHaveText(target)
+  await page.keyboard.press('Enter')
+}
+
 async function audit(page: Page) {
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -51,7 +81,7 @@ test('adds, trims, toggles, untoggles and deletes persistently', async ({ page }
   await mail.uncheck()
   await page.reload()
   await expect(mail).not.toBeChecked()
-  await page.getByRole('button', { name: 'Удалить: Разобрать почту', exact: true }).click()
+  await deleteTask(page, 'Разобрать почту')
   await page.reload()
   await expect(page.getByRole('checkbox')).toHaveCount(1)
   await expect(mail).toHaveCount(0)
@@ -86,9 +116,9 @@ test('keyboard flow preserves focus on toggle, delete and undo', async ({ page, 
   await page.keyboard.press('Enter')
   await expect(input(page)).toBeFocused()
   await page.keyboard.press(tab)
-  await expect(page.getByRole('button', { name: 'Добавить детали', exact: true })).toBeFocused()
-  await page.keyboard.press(tab)
   await expect(page.getByRole('button', { name: 'Добавить задачу', exact: true })).toBeFocused()
+  await page.keyboard.press(tab)
+  await expect(page.getByRole('button', { name: 'Добавить детали', exact: true })).toBeFocused()
   await page.keyboard.press(tab)
   const checkbox = page.getByRole('checkbox')
   await expect(checkbox).toBeFocused()
@@ -96,17 +126,15 @@ test('keyboard flow preserves focus on toggle, delete and undo', async ({ page, 
   await expect(checkbox).toBeChecked()
   await expect(checkbox).toBeFocused()
   await page.keyboard.press(tab)
-  await expect(page.getByRole('button', { name: /^Подробности:/ })).toBeFocused()
-  await page.keyboard.press(tab)
   await expect(page.getByRole('button', { name: /^Изменить:/ })).toBeFocused()
   await page.keyboard.press(tab)
   await expect(page.getByRole('button', { name: /^Удалить:/ })).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(input(page)).toBeFocused()
   await page.keyboard.press(tab)
-  await expect(page.getByRole('button', { name: 'Добавить детали', exact: true })).toBeFocused()
-  await page.keyboard.press(tab)
   await expect(page.getByRole('button', { name: 'Добавить задачу', exact: true })).toBeFocused()
+  await page.keyboard.press(tab)
+  await expect(page.getByRole('button', { name: 'Добавить детали', exact: true })).toBeFocused()
   await page.keyboard.press(tab)
   await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toBeFocused()
   await page.keyboard.press('Enter')
@@ -121,7 +149,7 @@ test('undo restores the previous position and completion state without a timer',
   await addTask(page, 'Второе')
   await addTask(page, 'Третье')
   await page.getByRole('checkbox', { name: /Второе/ }).check()
-  await page.getByRole('button', { name: 'Удалить: Второе', exact: true }).click()
+  await deleteTask(page, 'Второе')
   await expect(page.getByRole('checkbox', { name: /Первое/ })).toBeFocused()
   await addTask(page, 'Четвёртое')
   await page.getByRole('button', { name: 'Отменить', exact: true }).click()
@@ -211,7 +239,7 @@ test('synchronizes tabs while preserving draft and focus, including external cle
   await expect(input(other)).toHaveValue('Незаконченный ввод')
   await expect(input(other)).toBeFocused()
   await other.getByRole('checkbox').focus()
-  await page.getByRole('button', { name: /^Удалить:/ }).click()
+  await deleteTask(page)
   await expect(other.getByRole('checkbox')).toHaveCount(0)
   await expect(input(other)).toBeFocused()
   await addTask(page, 'После удаления')
@@ -244,7 +272,7 @@ test('has no axe WCAG A/AA violations in empty, populated and warning states', a
   await addTask(page, 'Проверить доступность')
   await page.getByRole('checkbox').check()
   await audit(page)
-  await page.getByRole('button', { name: /^Удалить:/ }).click()
+  await deleteTask(page)
   await audit(page)
   await page.evaluate((key) => localStorage.setItem(key, '{broken'), STORAGE_KEY)
   await page.reload()
@@ -266,7 +294,7 @@ test('does not overflow at the current viewport, including long unbroken text', 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   )
-  await page.getByRole('button', { name: /^Удалить:/ }).click()
+  await deleteTask(page)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   )
@@ -277,7 +305,7 @@ test('restores focus when an external update removes the undo panel', async ({ p
   await other.goto('/')
   await addTask(page, 'Удалить локально')
   await expect(other.getByRole('checkbox')).toHaveCount(1)
-  await page.getByRole('button', { name: /^Удалить:/ }).click()
+  await deleteTask(page)
   await expect(other.getByRole('checkbox')).toHaveCount(0)
   await page.getByRole('button', { name: 'Отменить', exact: true }).focus()
   await addTask(other, 'Из другой вкладки')
@@ -356,7 +384,7 @@ test('valid non-UUID ids do not collide with focus targets', async ({ page }) =>
     STORAGE_KEY,
   )
   await page.reload()
-  await page.getByRole('button', { name: 'Удалить: Удалить', exact: true }).click()
+  await deleteTask(page, 'Удалить')
   await expect(page.getByRole('checkbox', { name: /Сосед/ })).toBeFocused()
 })
 
@@ -383,7 +411,7 @@ test('creates title and multiline description, expands and edits without changin
   await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(dialog).toHaveCount(0)
   await expect(
-    page.getByRole('button', { name: 'Подробности: Релиз готов', exact: false }),
+    page.getByRole('button', { name: 'Изменить: Релиз готов', exact: true }),
   ).toBeFocused()
   await page.reload()
   await expect(page.getByRole('checkbox')).toBeChecked()
@@ -417,23 +445,17 @@ test('editing validates title, supports multiline input and cancels with Escape'
   await expect(page.locator('.task-description')).toHaveText('Детали')
 })
 
-test('move buttons and undo preserve details, state and order', async ({ page }) => {
+test('drag and undo preserve details, state and order', async ({ page }) => {
   await addTask(page, 'Первое', 'Детали первого')
   await addTask(page, 'Второе', 'Детали второго')
   await addTask(page, 'Третье', 'Детали третьего')
   await page.getByRole('button', { name: 'Подробности: Третье', exact: false }).click()
-  await expect(page.getByRole('button', { name: 'Выше: Третье', exact: true })).toBeDisabled()
-  const moveDown = page.getByRole('button', { name: 'Ниже: Третье', exact: true })
-  if (!test.info().project.use.hasTouch) await moveDown.click()
-  else await moveDown.tap()
+  await keyboardMove(page, 'Третье', 'ArrowDown', 'Второе')
   await expect(page.locator('.task-label')).toHaveText(['Второе', 'Третье', 'Первое'])
-  await expect(
-    page.getByRole('button', { name: 'Подробности: Третье', exact: false }),
-  ).toBeFocused()
   await page.getByRole('checkbox', { name: /Третье/ }).check()
-  await page.getByRole('button', { name: 'Удалить: Третье', exact: true }).click()
+  await deleteTask(page, 'Третье')
   await page.getByRole('button', { name: 'Подробности: Первое', exact: false }).click()
-  await page.getByRole('button', { name: 'Выше: Первое', exact: true }).click()
+  await keyboardMove(page, 'Первое', 'ArrowUp', 'Второе')
   await expect(page.locator('.task-label')).toHaveText(['Первое', 'Второе'])
   await page.getByRole('button', { name: 'Отменить', exact: true }).click()
   await expect(page.locator('.task-label')).toHaveText(['Третье', 'Первое', 'Второе'])
@@ -452,6 +474,7 @@ test('pointer drag reorders by the handle, persists and does not toggle or expan
   await addTask(page, 'Первое')
   await addTask(page, 'Второе')
   await addTask(page, 'Третье')
+  await page.getByRole('button', { name: 'Порядок', exact: true }).click()
   await page.getByRole('button', { name: 'Переместить: Третье', exact: true }).focus()
   await page
     .locator('.task-list')
@@ -478,9 +501,9 @@ test('pointer drag reorders by the handle, persists and does not toggle or expan
     'Первое',
     'Третье',
   ])
-  await expect(
-    page.getByRole('button', { name: 'Подробности: Третье', exact: false }),
-  ).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('button', { name: 'Подробности: Третье', exact: true })).toHaveCount(
+    0,
+  )
   await expect(page.getByRole('checkbox', { name: /Третье/ })).not.toBeChecked()
   await page.reload()
   await expect(page.locator('.task-label')).toHaveText(['Второе', 'Первое', 'Третье'])
@@ -490,6 +513,7 @@ test('keyboard drag supports reorder and Escape cancellation', async ({ page }) 
   await addTask(page, 'Первое')
   await addTask(page, 'Второе')
   await addTask(page, 'Третье')
+  await page.getByRole('button', { name: 'Порядок', exact: true }).click()
   const handle = page.getByRole('button', { name: 'Переместить: Третье', exact: true })
   await handle.focus()
   await page
@@ -528,6 +552,7 @@ test('external updates during a drag cancel its commit instead of applying stale
   await addTask(page, 'Второе')
   const other = await context.newPage()
   await other.goto('/')
+  await page.getByRole('button', { name: 'Порядок', exact: true }).click()
   const handle = page.getByRole('button', { name: 'Переместить: Второе', exact: true })
   await handle.focus()
   await page
@@ -615,7 +640,7 @@ test('draft survives external deletion and can become a new task', async ({ page
   await page.getByRole('button', { name: 'Изменить: Удаляемая задача', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('textbox', { name: 'Описание', exact: true }).fill('Несохранённые детали')
-  await other.getByRole('button', { name: 'Удалить: Удаляемая задача', exact: true }).click()
+  await deleteTask(other, 'Удаляемая задача')
   await expect(dialog.getByRole('alert')).toContainText('Задача удалена в другой вкладке')
   await expect(dialog.getByRole('textbox', { name: 'Описание', exact: true })).toHaveValue(
     'Несохранённые детали',
@@ -723,6 +748,7 @@ test('storage recovery with identical tasks does not invalidate an active drag',
   await page
     .locator('.task-list')
     .evaluate((element) => element.scrollIntoView({ block: 'center' }))
+  await page.getByRole('button', { name: 'Порядок', exact: true }).click()
   await page.getByRole('button', { name: 'Переместить: Второе', exact: true }).focus()
   await page.keyboard.press('Space')
   await expect(
@@ -763,7 +789,7 @@ test('composer focuses details, preserves a collapsed draft and resets after but
     test.info().project.use.browserName === 'webkit' && process.platform === 'darwin'
       ? 'Alt+Tab'
       : 'Tab'
-  await description.press(tab)
+  await description.press(tab === 'Alt+Tab' ? 'Alt+Shift+Tab' : 'Shift+Tab')
   await expect(page.getByRole('button', { name: 'Свернуть детали', exact: true })).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(toggle).toBeFocused()
@@ -867,4 +893,136 @@ test('arrow fully hides both single-line and multiline descriptions after repeat
   await page.reload()
   await expect(page.locator('.task-description')).toHaveCount(0)
   await audit(page)
+})
+
+test('compact rows keep actions aligned and reveal handles only in order mode', async ({
+  page,
+}) => {
+  await addTask(page, 'Без описания')
+  await addTask(page, 'С описанием', 'Описание полностью скрыто до раскрытия.')
+  await expect(page.locator('#new-description')).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: 'Подробности: Без описания', exact: true }),
+  ).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Переместить:/ })).toHaveCount(0)
+  await expect(page.getByRole('listitem')).toHaveCount(2)
+  const first = page.locator('.task-item').first()
+  const row = await first.boundingBox()
+  expect(row!.y).toBeLessThan(380)
+  const checkbox = await first.getByRole('checkbox').boundingBox()
+  const edit = await first.getByRole('button', { name: /^Изменить:/ }).boundingBox()
+  expect(Math.abs(checkbox!.y + checkbox!.height / 2 - edit!.y - edit!.height / 2)).toBeLessThan(1)
+  expect(edit!.width).toBeGreaterThanOrEqual(44)
+  expect(edit!.height).toBeGreaterThanOrEqual(44)
+  await page.getByRole('button', { name: 'Порядок', exact: true }).press('Enter')
+  await expect(page.getByRole('button', { name: /^Переместить:/ })).toHaveCount(2)
+  await expect(page.getByRole('button', { name: /^Изменить:/ })).toHaveCount(0)
+  await audit(page)
+  await page.getByRole('button', { name: 'Готово', exact: true }).press('Enter')
+  await expect(page.getByRole('button', { name: /^Переместить:/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Изменить:/ })).toHaveCount(2)
+  await expect(page.getByRole('checkbox').first()).toBeEnabled()
+  await expect(page.getByRole('button', { name: /^Удалить:/ }).first()).toBeEnabled()
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await audit(page)
+})
+
+test('external removal of a task with its delete control focused restores focus to the composer', async ({
+  page,
+  context,
+}) => {
+  await addTask(page, 'Внешнее удаление')
+  const other = await context.newPage()
+  await other.goto('/')
+  await page.getByRole('button', { name: 'Удалить: Внешнее удаление', exact: true }).focus()
+  await deleteTask(other, 'Внешнее удаление')
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await expect(page.getByRole('checkbox')).toHaveCount(0)
+  await expect(input(page)).toBeFocused()
+  await other.close()
+})
+
+test('removing and restoring a description keeps it collapsed until explicitly opened', async ({
+  page,
+}) => {
+  await addTask(page, 'Менять описание', 'Первое описание')
+  await page.getByRole('button', { name: 'Подробности: Менять описание', exact: true }).click()
+  await expect(page.locator('.task-description')).toHaveText('Первое описание')
+  await page.getByRole('button', { name: 'Изменить: Менять описание', exact: true }).click()
+  let dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox', { name: 'Описание', exact: true }).fill('')
+  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  await expect(
+    page.getByRole('button', { name: 'Подробности: Менять описание', exact: true }),
+  ).toHaveCount(0)
+  await expect(page.locator('.task-description')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Изменить: Менять описание', exact: true }).click()
+  dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox', { name: 'Описание', exact: true }).fill('Новое описание')
+  await dialog.getByRole('button', { name: 'Сохранить', exact: true }).click()
+  const details = page.getByRole('button', { name: 'Подробности: Менять описание', exact: true })
+  await expect(details).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.locator('.task-description')).toHaveCount(0)
+  await details.click()
+  await expect(page.locator('.task-description')).toHaveText('Новое описание')
+})
+
+test('touch drag by the handle reorders tasks and persists without completing them', async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== 'chromium' || !test.info().project.use.hasTouch,
+    'Trusted touch gestures use Chromium CDP; other projects cover mouse and keyboard drag.',
+  )
+  await addTask(page, 'Первое')
+  await addTask(page, 'Второе')
+  await addTask(page, 'Третье')
+  await page.getByRole('button', { name: 'Порядок', exact: true }).tap()
+  await page
+    .locator('.task-list')
+    .evaluate((element) => element.scrollIntoView({ block: 'center' }))
+  const handle = await page
+    .getByRole('button', { name: 'Переместить: Третье', exact: true })
+    .boundingBox()
+  if (!handle) throw new Error('Touch handle must be visible')
+  const session = await context.newCDPSession(page)
+  const x = handle.x + handle.width / 2
+  const y = handle.y + handle.height / 2
+  const point = (nextY: number) => [{ x, y: nextY, id: 0, radiusX: 6, radiusY: 6, force: 1 }]
+  try {
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: point(y) })
+    // The touch sensor activates after its intentional hold delay.
+    await expect(
+      page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
+    ).toHaveCount(1)
+    const target = await page.locator('.task-list > .task-item:not([inert])').last().boundingBox()
+    if (!target) throw new Error('Touch drop target must be visible')
+    const destination = target.y + target.height / 2
+    for (let step = 1; step <= 12; step++) {
+      await session.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: point(y + ((destination - y) * step) / 12),
+      })
+    }
+    await expect(
+      page.locator('.task-list > .task-item:not([inert])[data-over="true"] .task-label'),
+    ).toHaveText('Первое')
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await expect(page.locator('.task-list > .task-item:not([inert]) .task-label')).toHaveText([
+      'Второе',
+      'Первое',
+      'Третье',
+    ])
+    await expect(page.getByRole('checkbox', { checked: true })).toHaveCount(0)
+    await page.reload()
+    await expect(page.locator('.task-label')).toHaveText(['Второе', 'Первое', 'Третье'])
+    await expect(page.getByRole('button', { name: /^Переместить:/ })).toHaveCount(0)
+  } finally {
+    await session
+      .send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
+      .catch(() => {})
+    await session.detach()
+  }
 })
