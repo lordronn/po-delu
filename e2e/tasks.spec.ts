@@ -7,7 +7,7 @@ const input = (page: Page) => page.getByRole('textbox', { name: 'Заголов�
 
 async function addTask(page: Page, text: string, description?: string) {
   if (description !== undefined) {
-    await page.getByRole('button', { name: 'Добавить описание', exact: true }).click()
+    await page.getByRole('button', { name: 'Добавить детали', exact: true }).click()
     await page
       .getByRole('textbox', { name: 'Описание необязательно', exact: true })
       .fill(description)
@@ -82,9 +82,9 @@ test('keyboard flow preserves focus on toggle, delete and undo', async ({ page }
   await page.keyboard.press('Enter')
   await expect(input(page)).toBeFocused()
   await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name: 'Добавить', exact: true })).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Добавить детали', exact: true })).toBeFocused()
   await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name: 'Добавить описание', exact: true })).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Добавить задачу', exact: true })).toBeFocused()
   await page.keyboard.press('Tab')
   const checkbox = page.getByRole('checkbox')
   await expect(checkbox).toBeFocused()
@@ -100,8 +100,9 @@ test('keyboard flow preserves focus on toggle, delete and undo', async ({ page }
   await page.keyboard.press('Enter')
   await expect(input(page)).toBeFocused()
   await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'Добавить детали', exact: true })).toBeFocused()
   await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name: 'Добавить описание', exact: true })).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Добавить задачу', exact: true })).toBeFocused()
   await page.keyboard.press('Tab')
   await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toBeFocused()
   await page.keyboard.press('Enter')
@@ -250,6 +251,14 @@ test('does not overflow at the current viewport, including long unbroken text', 
   page,
 }) => {
   await addTask(page, 'З'.repeat(300))
+  const titleMetrics = await page.locator('.task-label').evaluate((element) => ({
+    height: element.getBoundingClientRect().height,
+    lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+    text: element.textContent,
+  }))
+  const maxLines = test.info().project.name === 'desktop' ? 1 : 2
+  expect(titleMetrics.height).toBeLessThanOrEqual(titleMetrics.lineHeight * maxLines + 8)
+  expect(titleMetrics.text).toBe('З'.repeat(300))
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   )
@@ -437,6 +446,7 @@ test('pointer drag reorders by the handle, persists and does not toggle or expan
   await addTask(page, 'Первое')
   await addTask(page, 'Второе')
   await addTask(page, 'Третье')
+  await page.getByRole('button', { name: 'Переместить: Третье', exact: true }).focus()
   await page
     .locator('.task-list')
     .evaluate((element) => element.scrollIntoView({ block: 'center' }))
@@ -475,6 +485,9 @@ test('keyboard drag supports reorder and Escape cancellation', async ({ page }) 
   await addTask(page, 'Третье')
   const handle = page.getByRole('button', { name: 'Переместить: Третье', exact: true })
   await handle.focus()
+  await page
+    .locator('.task-list')
+    .evaluate((element) => element.scrollIntoView({ block: 'center' }))
   await page.keyboard.press('Space')
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
@@ -487,6 +500,9 @@ test('keyboard drag supports reorder and Escape cancellation', async ({ page }) 
   await expect(page.locator('.task-label')).toHaveText(['Второе', 'Третье', 'Первое'])
   const raw = await page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY)
   await handle.focus()
+  await page
+    .locator('.task-list')
+    .evaluate((element) => element.scrollIntoView({ block: 'center' }))
   await page.keyboard.press('Space')
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
@@ -507,6 +523,9 @@ test('external updates during a drag cancel its commit instead of applying stale
   await other.goto('/')
   const handle = page.getByRole('button', { name: 'Переместить: Второе', exact: true })
   await handle.focus()
+  await page
+    .locator('.task-list')
+    .evaluate((element) => element.scrollIntoView({ block: 'center' }))
   await page.keyboard.press('Space')
   await expect(
     page.locator('.task-list > .task-item:not([inert])[data-dragging="true"]'),
@@ -635,7 +654,7 @@ test('migrates existing tasks without a startup write and protects details from 
 test('description length, long text and HTML-like content remain safe and usable', async ({
   page,
 }) => {
-  await page.getByRole('button', { name: 'Добавить описание', exact: true }).click()
+  await page.getByRole('button', { name: 'Добавить детали', exact: true }).click()
   const description = page.getByRole('textbox', { name: 'Описание необязательно', exact: true })
   await description.fill('Д'.repeat(2100))
   await expect(description).toHaveValue('Д'.repeat(2000))
@@ -717,4 +736,45 @@ test('storage recovery with identical tasks does not invalidate an active drag',
   await page.reload()
   await expect(page.locator('.task-label')).toHaveText(['Первое', 'Второе'])
   await other.close()
+})
+
+test('composer focuses details, preserves a collapsed draft and resets after button submission', async ({
+  page,
+}) => {
+  await input(page).fill('Подготовить тестовое')
+  const toggle = page.getByRole('button', { name: 'Добавить детали', exact: true })
+  await toggle.click()
+  const description = page.getByRole('textbox', { name: 'Описание необязательно', exact: true })
+  await expect(description).toBeFocused()
+  await description.fill('Проверить интерфейс на телефоне.\nПриложить ссылку на GitHub.')
+  await page.getByRole('button', { name: 'Свернуть детали', exact: true }).click()
+  await expect(toggle).toBeFocused()
+  await toggle.click()
+  await expect(description).toBeFocused()
+  await expect(description).toHaveValue(
+    'Проверить интерфейс на телефоне.\nПриложить ссылку на GitHub.',
+  )
+  await audit(page)
+  if (process.env.CAPTURE_SCREENSHOTS) {
+    await mkdir('docs/screenshots', { recursive: true })
+    await page.screenshot({
+      path: `docs/screenshots/composer-${test.info().project.name}.png`,
+      fullPage: true,
+      animations: 'disabled',
+    })
+  }
+  await page.getByRole('button', { name: 'Добавить задачу', exact: true }).click()
+  await expect(input(page)).toHaveValue('')
+  await expect(input(page)).toBeFocused()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.locator('.task-preview')).toHaveText('Проверить интерфейс на телефоне.')
+  await page.reload()
+  await expect(page.locator('.task-preview')).toHaveText('Проверить интерфейс на телефоне.')
+  await page.getByRole('button', { name: 'Подробности: Подготовить тестовое', exact: true }).click()
+  await expect(page.locator('.task-preview')).toHaveCount(0)
+  await expect(page.locator('.task-description')).toHaveText(
+    'Проверить интерфейс на телефоне.\nПриложить ссылку на GitHub.',
+  )
+  await toggle.click()
+  await expect(description).toHaveValue('')
 })

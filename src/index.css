@@ -175,11 +175,6 @@ input:focus-visible {
   font-size: 13px;
   font-weight: 650;
 }
-.input-group {
-  display: flex;
-  gap: 10px;
-  align-items: start;
-}
 .task-input {
   flex: 1;
   min-width: 0;
@@ -368,6 +363,10 @@ input:focus-visible {
   line-height: 1.6;
   overflow-wrap: anywhere;
   cursor: pointer;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .task-row[data-done='true'] .task-label {
   color: #696d7a;
@@ -567,27 +566,8 @@ input:focus-visible {
   .add-form {
     padding: 22px 18px 18px;
   }
-  .input-group {
-    gap: 8px;
-  }
   .task-input {
     font-size: 16px;
-  }
-  .add-button {
-    width: 46px;
-    padding: 0;
-    flex-shrink: 0;
-  }
-  .add-button > span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border-width: 0;
   }
   .list-heading {
     padding: 18px 18px 8px;
@@ -629,21 +609,133 @@ input:focus-visible {
 }
 
 /* Task details and ordering share the same calm, compact visual language. */
+.composer-field {
+  background: #fff;
+  border: 1px solid #858c9e;
+  border-radius: 12px;
+  box-shadow: 0 2px 5px #25273304;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.composer-field:has(input:focus-visible, textarea:focus-visible) {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px #3e54ce20;
+}
+.composer-field:has([aria-invalid='true']) {
+  border-color: #b42332;
+}
+.composer-field .task-input {
+  height: 54px;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 16px;
+  box-shadow: none;
+  background: transparent;
+  outline: none;
+}
+.composer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  padding: 4px 8px 8px;
+}
 .description-toggle {
-  margin: 4px 0 -4px -8px;
   color: #535e84;
   min-height: 44px;
+  padding: 0 8px;
+  font-size: 12px;
+  gap: 6px;
+}
+.composer-toolbar .add-button {
+  margin-left: auto;
+  min-height: 44px;
+  height: 44px;
+  padding: 0 13px;
   font-size: 12px;
 }
 .description-field {
-  padding-top: 16px;
+  overflow: hidden;
 }
-.description-field textarea,
+.description-field[data-state='open'] {
+  animation: details-expand 180ms ease-out;
+}
+.description-field[data-state='closed'] {
+  animation: details-collapse 140ms ease-in;
+}
+@keyframes details-expand {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+  }
+}
+@keyframes details-collapse {
+  from {
+    height: var(--radix-collapsible-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+.description-field-inner {
+  border-top: 1px solid #eceef4;
+  margin: 0 16px;
+  padding: 14px 0 8px;
+}
+.description-field .form-label {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.description-field textarea {
+  resize: vertical;
+  min-height: 100px;
+  max-height: 300px;
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 0;
+  box-shadow: none;
+  background: #fff;
+  outline: none;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.description-field .input-hint {
+  margin-top: 6px;
+  font-size: 10px;
+}
 .task-editor textarea {
   resize: vertical;
   min-height: 100px;
   max-height: 300px;
   background: #fff;
+}
+.task-title-content {
+  flex: 1;
+  min-width: 0;
+}
+.task-title-content .task-trigger {
+  width: 100%;
+}
+.task-title-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.task-preview {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #696d7a;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.7;
 }
 .optional-label {
   margin-left: 5px;
@@ -843,5 +935,50 @@ input:focus-visible {
   .task-actions {
     grid-column: 2;
     justify-self: end;
+  }
+}
+
+@media (max-width: 600px) {
+  .composer-toolbar {
+    padding: 4px 7px 7px;
+    gap: 2px;
+  }
+  .description-toggle {
+    font-size: 11px;
+    gap: 5px;
+    padding: 0 6px;
+  }
+  .composer-toolbar .add-button {
+    font-size: 11px;
+    padding: 0 10px;
+    gap: 5px;
+  }
+  .composer-field .task-input {
+    padding: 12px;
+  }
+  .description-field-inner {
+    margin: 0 12px;
+  }
+}
+@media (max-width: 380px) {
+  .composer-toolbar .add-button {
+    width: 100%;
+    margin-top: 4px;
+    justify-content: center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .description-field {
+    animation: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .task-label {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
   }
 }

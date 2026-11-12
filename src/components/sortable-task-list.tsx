@@ -59,17 +59,28 @@ function TaskRow({
             className="task-checkbox"
             aria-label={`${task.done ? 'Вернуть в работу' : 'Выполнить'}: ${task.title}`}
           />
-          <CollapsibleTrigger asChild>
-            <button
-              id={`details-${task.id}`}
-              type="button"
-              className="task-trigger"
-              aria-label={`Подробности: ${task.title}`}
-            >
-              <span className="task-label">{task.title}</span>
-              <ChevronDown size={16} aria-hidden="true" className="task-chevron" />
-            </button>
-          </CollapsibleTrigger>
+          <div className="task-title-content">
+            <CollapsibleTrigger asChild>
+              <button
+                id={`details-${task.id}`}
+                type="button"
+                className="task-trigger"
+                title={task.title}
+                aria-label={`Подробности: ${task.title}`}
+                aria-describedby={!open && task.description ? `preview-${task.id}` : undefined}
+              >
+                <span className="task-title-copy">
+                  <span className="task-label">{task.title}</span>
+                </span>
+                <ChevronDown size={16} aria-hidden="true" className="task-chevron" />
+              </button>
+            </CollapsibleTrigger>
+            {!open && task.description && (
+              <p id={`preview-${task.id}`} className="task-preview">
+                {task.description.split(/\r?\n/)[0]}
+              </p>
+            )}
+          </div>
           <div className="task-actions">
             <Button
               variant="ghost"
