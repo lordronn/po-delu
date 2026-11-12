@@ -330,9 +330,6 @@ input:focus-visible {
   padding: 7px 8px 7px 14px;
   transition: background 0.15s ease;
 }
-.task-row + .task-row {
-  border-top: 1px solid #f1f1f5;
-}
 .task-row:hover {
   background: #f9faff;
 }
@@ -712,13 +709,6 @@ input:focus-visible {
   min-height: 100px;
   max-height: 300px;
   background: #fff;
-}
-.task-title-content {
-  flex: 1;
-  min-width: 0;
-}
-.task-title-content .task-trigger {
-  width: 100%;
 }
 .task-title-copy {
   display: flex;

@@ -59,28 +59,26 @@ function TaskRow({
             className="task-checkbox"
             aria-label={`${task.done ? 'Вернуть в работу' : 'Выполнить'}: ${task.title}`}
           />
-          <div className="task-title-content">
-            <CollapsibleTrigger asChild>
-              <button
-                id={`details-${task.id}`}
-                type="button"
-                className="task-trigger"
-                title={task.title}
-                aria-label={`Подробности: ${task.title}`}
-                aria-describedby={!open && task.description ? `preview-${task.id}` : undefined}
-              >
-                <span className="task-title-copy">
-                  <span className="task-label">{task.title}</span>
-                </span>
-                <ChevronDown size={16} aria-hidden="true" className="task-chevron" />
-              </button>
-            </CollapsibleTrigger>
-            {!open && task.description && (
-              <p id={`preview-${task.id}`} className="task-preview">
-                {task.description.split(/\r?\n/)[0]}
-              </p>
-            )}
-          </div>
+          <CollapsibleTrigger asChild>
+            <button
+              id={`details-${task.id}`}
+              type="button"
+              className="task-trigger"
+              title={task.title}
+            >
+              <span className="sr-only">Подробности: </span>
+              <span className="task-title-copy">
+                <span className="task-label">{task.title}</span>
+                {!open && task.description && (
+                  <>
+                    {' '}
+                    <span className="task-preview">{task.description.split(/\r?\n/)[0]}</span>
+                  </>
+                )}
+              </span>
+              <ChevronDown size={16} aria-hidden="true" className="task-chevron" />
+            </button>
+          </CollapsibleTrigger>
           <div className="task-actions">
             <Button
               variant="ghost"

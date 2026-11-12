@@ -32,6 +32,40 @@ export default defineConfig({
         hasTouch: true,
       },
     },
+    ...(process.env.FIREFOX
+      ? [
+          {
+            name: 'firefox',
+            use: { browserName: 'firefox' as const, viewport: { width: 1280, height: 900 } },
+          },
+        ]
+      : []),
+    ...(process.env.CROSS_BROWSER
+      ? [
+          {
+            name: 'webkit',
+            use: { browserName: 'webkit' as const, viewport: { width: 1280, height: 900 } },
+          },
+          {
+            name: 'webkit-mobile',
+            use: {
+              browserName: 'webkit' as const,
+              viewport: { width: 390, height: 844 },
+              isMobile: true,
+              hasTouch: true,
+            },
+          },
+          {
+            name: 'webkit-compact',
+            use: {
+              browserName: 'webkit' as const,
+              viewport: { width: 320, height: 740 },
+              isMobile: true,
+              hasTouch: true,
+            },
+          },
+        ]
+      : []),
   ],
   webServer: {
     command: 'npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',

@@ -41,7 +41,14 @@ export function TaskEditor({ initial, current, onSave, onClose }: Props) {
       document.getElementById(titleMessage ? 'edit-title' : 'edit-description')?.focus()
       return
     }
-    if (conflict && !asNew) return
+    if (conflict && !asNew) {
+      setError(
+        current
+          ? 'Выберите «Загрузить актуальную» или «Добавить как новую».'
+          : 'Задача удалена. Чтобы сохранить черновик, выберите «Добавить как новую».',
+      )
+      return
+    }
     if (!onSave(base, title, description, asNew))
       setError('Задача изменилась. Проверьте актуальную версию перед сохранением.')
   }
@@ -105,7 +112,7 @@ export function TaskEditor({ initial, current, onSave, onClose }: Props) {
               setError(null)
             }}
             maxLength={MAX_TASK_LENGTH}
-            aria-invalid={!!error}
+            aria-invalid={!!error && !!validateText(title)}
             aria-describedby={error ? 'edit-error' : 'edit-hint'}
             autoComplete="off"
           />
