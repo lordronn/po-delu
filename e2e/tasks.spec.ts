@@ -22,6 +22,12 @@ async function deleteTask(page: Page, title?: string) {
     .click()
 }
 
+async function restoreTask(page: Page, title: string) {
+  const toggle = page.getByRole('button', { name: /^Корзина/ })
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+  await page.getByRole('button', { name: `Восстановить: ${title}`, exact: true }).click()
+}
+
 async function keyboardMove(
   page: Page,
   title: string,
@@ -139,8 +145,11 @@ test('keyboard flow preserves focus on toggle, delete and undo', async ({ page, 
   await expect(page.getByRole('button', { name: 'Добавить детали', exact: true })).toBeFocused()
   await page.keyboard.press(tab)
   await expect(page.getByRole('button', { name: /^Корзина/ })).toBeFocused()
+  await page.keyboard.press('Enter')
   await page.keyboard.press(tab)
-  await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toBeFocused()
+  await expect(
+    page.getByRole('button', { name: 'Восстановить: Проверить клавиатуру', exact: true }),
+  ).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(checkbox).toBeChecked()
   await expect(checkbox).toBeFocused()
@@ -156,7 +165,7 @@ test('undo restores the previous position and completion state without a timer',
   await deleteTask(page, 'Второе')
   await expect(page.getByRole('checkbox', { name: /Первое/ })).toBeFocused()
   await addTask(page, 'Четвёртое')
-  await page.getByRole('button', { name: 'Отменить', exact: true }).click()
+  await restoreTask(page, 'Второе')
   await expect(page.locator('.task-label')).toHaveText(['Четвёртое', 'Третье', 'Первое', 'Второе'])
   await expect(page.getByRole('checkbox', { name: /Второе/ })).toBeChecked()
   await page.reload()
@@ -304,16 +313,18 @@ test('does not overflow at the current viewport, including long unbroken text', 
   )
 })
 
-test('restores focus when an external update removes the undo panel', async ({ page, context }) => {
+test('restores focus when an external update removes the last trash task and its heading', async ({
+  page,
+  context,
+}) => {
   const other = await context.newPage()
   await other.goto('/')
   await addTask(page, 'Удалить локально')
-  await expect(other.getByRole('checkbox')).toHaveCount(1)
   await deleteTask(page)
   await expect(other.getByRole('checkbox')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Отменить', exact: true }).focus()
-  await addTask(other, 'Из другой вкладки')
-  await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: /^Корзина/ }).focus()
+  await restoreTask(other, 'Удалить локально')
+  await expect(page.getByRole('button', { name: /^Корзина/ })).toHaveCount(0)
   await expect(input(page)).toBeFocused()
   await other.close()
 })
@@ -461,7 +472,7 @@ test('drag and undo preserve details, state and order', async ({ page }) => {
   await page.getByRole('button', { name: 'Подробности: Первое', exact: false }).click()
   await keyboardMove(page, 'Первое', 'ArrowUp', 'Второе')
   await expect(page.locator('.task-label')).toHaveText(['Первое', 'Второе'])
-  await page.getByRole('button', { name: 'Отменить', exact: true }).click()
+  await restoreTask(page, 'Третье')
   await expect(page.locator('.task-label')).toHaveText(['Первое', 'Третье', 'Второе'])
   await page.reload()
   await expect(page.locator('.task-label')).toHaveText(['Первое', 'Третье', 'Второе'])
@@ -1280,14 +1291,14 @@ test('trash survives reload, preserves details and done state, restores and conf
   page.once('dialog', (dialog) => dialog.accept())
   await purge.click()
   await expect(page.locator('.trash-item')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /^Корзина/ })).toBeFocused()
+  await expect(input(page)).toBeFocused()
+  await expect(page.getByRole('button', { name: /^Корзина/ })).toHaveCount(0)
   await page.reload()
-  await page.getByRole('button', { name: /^Корзина/ }).click()
-  await expect(page.getByText('Корзина пуста.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Корзина/ })).toHaveCount(0)
   await expect(checkbox).toBeChecked()
 })
 
-test('trash synchronizes across tabs and external restore returns focus to its heading', async ({
+test('trash synchronizes across tabs and external restore returns focus to the composer', async ({
   page,
   context,
 }) => {
@@ -1303,14 +1314,16 @@ test('trash synchronizes across tabs and external restore returns focus to its h
   await page.getByRole('button', { name: 'Удалить навсегда: Между вкладками', exact: true }).focus()
   await other.getByRole('button', { name: 'Восстановить: Между вкладками', exact: true }).click()
   await expect(page.getByRole('checkbox', { name: /Между вкладками/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: /^Корзина/ })).toBeFocused()
+  await expect(input(page)).toBeFocused()
+  await expect(page.getByRole('button', { name: /^Корзина/ })).toHaveCount(0)
   await expect(page.locator('.trash-item')).toHaveCount(0)
   await deleteTask(other, 'Между вкладками')
+  await page.getByRole('button', { name: /^Корзина/ }).click()
   await expect(page.locator('.trash-item')).toHaveCount(1)
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Удалить навсегда: Между вкладками', exact: true }).click()
   await other.reload()
-  await other.getByRole('button', { name: /^Корзина/ }).click()
+  await expect(other.getByRole('button', { name: /^Корзина/ })).toHaveCount(0)
   await expect(other.locator('.trash-item')).toHaveCount(0)
   await other.close()
 })
@@ -1331,7 +1344,7 @@ test('editor stays light with comfortable fields in both system color schemes', 
     await audit(page)
     await page.getByRole('button', { name: 'Отмена', exact: true }).click()
   }
-  await page.getByRole('button', { name: /^Корзина/ }).click()
+  await expect(page.getByRole('button', { name: /^Корзина/ })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
@@ -1350,4 +1363,23 @@ test('keyboard drag immediately after completion uses the final task positions',
   await page.reload()
   await expect(page.locator('.task-label')).toHaveText(['Второе', 'Первое'])
   await expect(page.getByRole('checkbox', { name: /Второе/ })).toBeChecked()
+})
+
+test('shows deleted tasks once in trash and hides an empty trash before and after reload', async ({
+  page,
+}) => {
+  await expect(page.getByRole('button', { name: /^Корзина/ })).toHaveCount(0)
+  await addTask(page, 'Единственная удалённая задача', 'Описание без дублей.')
+  await expect(page.getByRole('button', { name: /^Корзина/ })).toHaveCount(0)
+  await deleteTask(page, 'Единственная удалённая задача')
+  await page.getByRole('button', { name: /^Корзина/ }).click()
+  await expect(page.getByText('Единственная удалённая задача', { exact: true })).toHaveCount(1)
+  await expect(page.locator('.undo-panel')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toHaveCount(0)
+  await audit(page)
+  await restoreTask(page, 'Единственная удалённая задача')
+  await expect(page.getByRole('button', { name: /^Корзина/ })).toHaveCount(0)
+  await expect(page.getByRole('checkbox', { name: /Единственная удалённая задача/ })).toBeFocused()
+  await page.reload()
+  await expect(page.getByRole('button', { name: /^Корзина/ })).toHaveCount(0)
 })

@@ -437,39 +437,6 @@ textarea:focus-visible {
   border-radius: 8px;
   font-size: 12px;
 }
-.undo-panel {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 14px;
-  padding: 10px 14px;
-  border: 1px solid #dce2f8;
-  background: #eef1fc;
-  border-radius: 10px;
-}
-.undo-panel > div {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 3px;
-}
-.undo-title {
-  font-size: 12px;
-  font-weight: 600;
-}
-.undo-text {
-  font-size: 12px;
-  color: #59657b;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.undo-panel button {
-  flex-shrink: 0;
-  min-height: 44px;
-  font-size: 12px;
-}
 .storage-alert {
   margin-bottom: 20px;
   border-color: #e8ccaf;
@@ -640,8 +607,7 @@ textarea:focus-visible {
 .trash-count {
   color: #626b7b;
 }
-.trash-hint,
-.trash-empty {
+.trash-hint {
   color: #626b7b;
   font-size: 12px;
   line-height: 1.6;

@@ -44,7 +44,7 @@ const storageMessages = {
 
 export default function App({ store, backend }: AppProps) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
-  const { tasks, trash, deleted, persistence } = snapshot
+  const { tasks, trash, persistence } = snapshot
   const [editing, setEditing] = useState<Task | null>(null)
   const [dragNotice, setDragNotice] = useState<string | null>(null)
   const pendingFocus = useRef<string | null>(null)
@@ -56,7 +56,7 @@ export default function App({ store, backend }: AppProps) {
     function onStorage(event: StorageEvent) {
       if (event.storageArea !== backend || (event.key !== STORAGE_KEY && event.key !== null)) return
       const active = document.activeElement
-      const focusedUndo = !!active?.closest('.undo-panel')
+      const focusedTrashToggle = active?.id === 'trash-toggle'
       const focusedRecovery = !!active?.closest('.storage-alert')
       const focusedTrash = active?.closest('[data-trash-id]')?.getAttribute('data-trash-id')
       const focusedRow = active?.closest('[data-task-id]')?.getAttribute('data-task-id')
@@ -64,12 +64,12 @@ export default function App({ store, backend }: AppProps) {
       const next = store.getSnapshot()
       if (
         (focusedRow && !next.tasks.some((task) => task.id === focusedRow)) ||
-        (focusedUndo && !next.deleted) ||
+        (focusedTrashToggle && next.trash.length === 0) ||
         (focusedRecovery && next.persistence === 'saved')
       )
         pendingFocus.current = 'new-task'
       if (focusedTrash && !next.trash.some((task) => task.id === focusedTrash))
-        pendingFocus.current = 'trash-toggle'
+        pendingFocus.current = next.trash.length ? 'trash-toggle' : 'new-task'
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
@@ -101,15 +101,11 @@ export default function App({ store, backend }: AppProps) {
     store.dispatch({ type: 'delete', id: task.id })
   }
 
-  function undoDelete() {
-    pendingFocus.current = deleted ? `task-${deleted.task.id}` : 'new-task'
-    store.dispatch({ type: 'undo' })
-  }
-
   function restoreTask(id: string) {
-    if (!store.getSnapshot().trash.some((task) => task.id === id)) return
+    const current = store.getSnapshot()
+    if (!current.trash.some((task) => task.id === id)) return
     pendingFocus.current = `task-${id}`
-    store.dispatch({ type: 'restore', id })
+    store.dispatch(current.deleted?.task.id === id ? { type: 'undo' } : { type: 'restore', id })
   }
 
   function purgeTask(task: Task) {
@@ -121,7 +117,7 @@ export default function App({ store, backend }: AppProps) {
     const index = current.findIndex((item) => item.id === task.id)
     if (index < 0) return
     const neighbor = current[index + 1] ?? current[index - 1]
-    pendingFocus.current = neighbor ? `restore-${neighbor.id}` : 'trash-toggle'
+    pendingFocus.current = neighbor ? `restore-${neighbor.id}` : 'new-task'
     store.dispatch({ type: 'purge', id: task.id })
   }
 
@@ -259,18 +255,6 @@ export default function App({ store, backend }: AppProps) {
             </span>
           </div>
         </div>
-
-        {deleted && (
-          <div className="undo-panel">
-            <div>
-              <span className="undo-title">Задача удалена</span>
-              <span className="undo-text">{deleted.task.title}</span>
-            </div>
-            <Button variant="outline" size="sm" onClick={undoDelete}>
-              <RotateCcw size={14} aria-hidden="true" /> Отменить
-            </Button>
-          </div>
-        )}
 
         {dragNotice && (
           <p className="drag-notice" role="status">

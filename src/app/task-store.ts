@@ -54,7 +54,7 @@ export function createTaskStore(backend: StorageBackend | null) {
           : action.type === 'purge'
             ? 'Задача удалена окончательно.'
             : action.type === 'delete'
-              ? 'Задача удалена. Можно отменить удаление.'
+              ? 'Задача перемещена в корзину.'
               : action.type === 'undo' || action.type === 'restore'
                 ? 'Задача восстановлена.'
                 : action.type === 'update'
